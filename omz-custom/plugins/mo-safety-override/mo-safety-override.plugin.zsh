@@ -5,11 +5,9 @@ alias cp="cp -i"        # prompt before overwrite
 alias mv="mv -i"        # prompt before overwrite
 alias mkdir="mkdir -pv" # create parents silently, print each new dir
 
-if command -v trash-put &>/dev/null; then
-	alias rm="trash-put"
-else
-	alias rm="rm -I"    # prompt when removing 3+ files or recursing
-fi
+# mo-trash owns the rm-to-trash redirect and loads after this plugin, so its
+# alias wins when enabled. This is only the fallback.
+alias rm="rm -I"        # prompt when removing 3+ files or recursing
 
 _confirm_reboot() {
 	echo "This is $(hostname). Are you sure you want to reboot the system? (y/N)"

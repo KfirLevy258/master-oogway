@@ -16,7 +16,7 @@ typeset -gA _MO_EXTRACT_HINTS=(
 
 _mo_extract_check() {
 	command -v "$1" &>/dev/null && return 0
-	echo "extract: '$1' not installed (try: sudo apt install ${_MO_EXTRACT_HINTS[$1]:-$1})" >&2
+	echo "extract: '$1' not installed (try: $(_mo_pkg_hint ${_MO_EXTRACT_HINTS[$1]:-$1}))" >&2
 	return 1
 }
 
@@ -83,13 +83,15 @@ extract() {
 					;;
 			esac
 		fi
-		local _tar_flags="--no-overwrite-dir --no-same-owner --no-same-permissions"
+		# _mo_untar keeps GNU tar's hardening flags on Linux; bsdtar has no
+		# equivalent and already declines to restore owner or permissions for a
+		# non-root user.
 		case "$file" in
-			*.tar.bz2)  _mo_extract_check tar     && tar xjf "$file"        ${=_tar_flags} || failed=1 ;;
-			*.tar.gz)   _mo_extract_check tar     && tar xzf "$file"        ${=_tar_flags} || failed=1 ;;
-			*.tar.xz)   _mo_extract_check tar     && tar xJf "$file"        ${=_tar_flags} || failed=1 ;;
-			*.tar.zst)  _mo_extract_check tar && _mo_extract_check zstd && tar --zstd -xf "$file" ${=_tar_flags} || failed=1 ;;
-			*.tar)      _mo_extract_check tar     && tar xf  "$file"        ${=_tar_flags} || failed=1 ;;
+			*.tar.bz2)  _mo_extract_check tar     && _mo_untar "$file" . || failed=1 ;;
+			*.tar.gz)   _mo_extract_check tar     && _mo_untar "$file" . || failed=1 ;;
+			*.tar.xz)   _mo_extract_check tar     && _mo_untar "$file" . || failed=1 ;;
+			*.tar.zst)  _mo_extract_check tar     && _mo_untar "$file" . || failed=1 ;;
+			*.tar)      _mo_extract_check tar     && _mo_untar "$file" . || failed=1 ;;
 			*.bz2)      _mo_extract_check bunzip2 && bunzip2 "$file"        || failed=1 ;;
 			*.gz)       _mo_extract_check gunzip  && gunzip  "$file"        || failed=1 ;;
 			*.zip)      _mo_extract_check unzip   && _mo_extract_zip "$file" "$force_merge" || failed=1 ;;
@@ -141,7 +143,7 @@ fp() {
 		echo "Usage: fp [base-dir]"
 		echo "  Interactively select a file and copy its full path to clipboard."
 		echo "  base-dir — where to search (default: current directory)"
-		echo "  Copies path to clipboard (wl-copy or xclip), or prints it if neither is available."
+		echo "  Copies the path to the system clipboard, or prints it if that fails."
 		echo "  Tip: CTRL+T (fzf plugin) inserts a file path inline at the prompt."
 		return
 	fi
@@ -170,7 +172,7 @@ fp() {
 
 _mo_compress_check() {
 	command -v "$1" &>/dev/null && return 0
-	echo "compress: '$1' not installed (try: sudo apt install ${_MO_EXTRACT_HINTS[$1]:-$1})" >&2
+	echo "compress: '$1' not installed (try: $(_mo_pkg_hint ${_MO_EXTRACT_HINTS[$1]:-$1}))" >&2
 	return 1
 }
 

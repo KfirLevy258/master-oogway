@@ -1,14 +1,6 @@
-# Shared clipboard helper — write a string to the system clipboard.
-# Sourced by oh-my-zsh before any plugin; callers don't need to import it.
-# Returns 1 (and prints to stderr) when no clipboard tool is found.
-_mo_clip() {
-	local data="${1}"
-	if command -v wl-copy &>/dev/null; then
-		printf '%s' "$data" | wl-copy
-	elif command -v xclip &>/dev/null; then
-		printf '%s' "$data" | xclip -selection clipboard
-	else
-		echo "_mo_clip: no clipboard tool found (try: sudo apt install wl-clipboard)" >&2
-		return 1
-	fi
+# Clipboard helper. The platform layer owns the mechanism (pbcopy on macOS,
+# wl-copy/xclip/xsel on Linux); this stays as the name plugins already call.
+# Sourced by zshrc.master-oogway along with the rest of lib/.
+_mo_clip_string() {
+	_mo_clip "$1"
 }

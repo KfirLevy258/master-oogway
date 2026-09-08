@@ -22,7 +22,7 @@ trash-restore() {
 		return
 	fi
 	if ! command -v fzf &>/dev/null; then
-		echo "trash-restore: fzf not installed (try: sudo apt install fzf)" >&2
+		echo "trash-restore: fzf not installed (try: $(_mo_pkg_hint fzf))" >&2
 		return 1
 	fi
 	# trash-list prints "DATE TIME /original/path"; fzf picks one line and we

@@ -7,7 +7,7 @@ psgrep() {
 		echo "  (Full-line matching may produce false positives for common substrings.)"
 		return
 	fi
-	command -v pgrep &>/dev/null || { echo "psgrep: pgrep not installed (try: sudo apt install procps)" >&2; return 1; }
+	command -v pgrep &>/dev/null || { echo "psgrep: pgrep not installed (try: $(_mo_pkg_hint procps))" >&2; return 1; }
 	if [[ "$1" == "-a" || "$1" == "--all" ]]; then
 		shift
 		[[ $# -eq 0 ]] && { echo "psgrep: missing name after -a" >&2; return 1; }
@@ -32,7 +32,7 @@ port() {
 		echo "port: invalid port '$1' (must be 1–65535)" >&2
 		return 1
 	fi
-	command -v lsof &>/dev/null || { echo "port: lsof not installed (try: sudo apt install lsof)" >&2; return 1; }
+	command -v lsof &>/dev/null || { echo "port: lsof not installed (try: $(_mo_pkg_hint lsof))" >&2; return 1; }
 	local out
 	out=$(lsof -iTCP:"$1" -iUDP:"$1" -sTCP:LISTEN -P -n 2>/dev/null)
 	if [[ -z "$out" ]]; then
@@ -71,7 +71,7 @@ connected() {
 		return
 	fi
 
-	command -v ss &>/dev/null || { echo "connected: -v needs ss (try: sudo apt install iproute2)" >&2; return 1; }
+	command -v ss &>/dev/null || { echo "connected: -v needs ss (try: $(_mo_pkg_hint iproute2))" >&2; return 1; }
 	local user tty date time idle pid host peer
 	{
 		echo "USER TTY FROM PID LOGIN"

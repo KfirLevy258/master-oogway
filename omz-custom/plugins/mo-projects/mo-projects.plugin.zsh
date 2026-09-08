@@ -35,7 +35,7 @@ p() {
 		return
 	fi
 	if ! command -v fzf &>/dev/null; then
-		echo "p: fzf not installed (try: sudo apt install fzf)" >&2
+		echo "p: fzf not installed (try: $(_mo_pkg_hint fzf))" >&2
 		return 1
 	fi
 	local proj_dir

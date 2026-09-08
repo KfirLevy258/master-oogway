@@ -106,20 +106,27 @@ epoch() {
 		echo "  (no args)                    — print current unix timestamp"
 		echo "  epoch 1700000000             — unix timestamp → local date"
 		echo "  epoch --utc 1700000000       — unix timestamp → UTC date"
-		echo "  epoch 'yesterday'            — date string → unix timestamp"
-		echo "  epoch 'last friday 18:00'    — natural language → unix timestamp"
 		echo "  epoch '2025-01-15 09:30:00'  — ISO datetime → unix timestamp"
-		echo "  epoch 'next monday'          — relative date → unix timestamp"
+		if _mo_date_parses_natural_language; then
+			echo "  epoch 'yesterday'            — date string → unix timestamp"
+			echo "  epoch 'last friday 18:00'    — natural language → unix timestamp"
+			echo "  epoch 'next monday'          — relative date → unix timestamp"
+		else
+			echo "  (BSD date cannot parse natural language — pass an ISO datetime)"
+		fi
 		echo "  --utc / -u  show result in UTC instead of local timezone"
 		return
 	fi
-	local date_flags=()
-	$utc && date_flags=(-u)
 	if [[ $# -eq 0 ]]; then
-		date "${date_flags[@]}" +%s
+		date +%s
 	elif [[ "$1" =~ '^[0-9]+$' ]]; then
-		date "${date_flags[@]}" -d "@$1"
+		if $utc; then _mo_epoch_to_date "$1" --utc; else _mo_epoch_to_date "$1"; fi
 	else
-		date "${date_flags[@]}" -d "$*" +%s
+		_mo_date_to_epoch "$*" || {
+			echo "epoch: could not parse '$*'" >&2
+			_mo_date_parses_natural_language \
+				|| echo "  BSD date needs an ISO datetime: 'YYYY-MM-DD HH:MM:SS'" >&2
+			return 1
+		}
 	fi
 }

@@ -130,7 +130,7 @@ frg() {
 		return
 	fi
 	command -v fzf &>/dev/null || { echo "frg: fzf not installed" >&2; return 1; }
-	command -v rg  &>/dev/null || { echo "frg: rg not installed (try: sudo apt install ripgrep)" >&2; return 1; }
+	command -v rg  &>/dev/null || { echo "frg: rg not installed (try: $(_mo_pkg_hint ripgrep))" >&2; return 1; }
 	local dir="${1:-.}"
 	[[ -d "$dir" ]] || { echo "frg: not a directory: $dir" >&2; return 1; }
 	local rg_cmd="[[ -z {q} ]] && true || rg --color=always --line-number --null -- {q} '$dir' 2>/dev/null \

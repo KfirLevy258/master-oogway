@@ -32,14 +32,7 @@ fenv() {
 		return
 	fi
 	if [[ "$mode" == "copy" ]]; then
-		if command -v xclip &>/dev/null; then
-			print -rn -- "$var_value" | xclip -selection clipboard
-		elif command -v xsel &>/dev/null; then
-			print -rn -- "$var_value" | xsel --clipboard --input
-		else
-			echo "fenv: neither xclip nor xsel installed" >&2
-			return 1
-		fi
+		_mo_clip "$var_value" || { echo "fenv: could not copy to clipboard" >&2; return 1; }
 		echo "Copied $var_name to clipboard"
 		return
 	fi
@@ -58,7 +51,7 @@ fenv() {
 		${EDITOR:-vim} "$tmpfile"
 		new_value=$(command cat "$tmpfile")
 		# `command rm` so a secrets temp file is really deleted, not sent to a
-		# trash can by an `rm`→trash-put alias.
+		# trash can by the `rm` alias mo-trash installs.
 		command rm -f "$tmpfile"
 	fi
 	export "${var_name}=${new_value}"

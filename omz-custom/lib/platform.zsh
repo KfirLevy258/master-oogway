@@ -276,13 +276,38 @@ _mo_untar() {
 # -- packages -------------------------------------------------------------------
 _mo_pkg_manager() { _mo_is_macos && print -- brew || print -- apt }
 
-# Install hint for a package, e.g. "sudo apt install fzf" / "brew install fzf".
+# Debian package names that differ on Homebrew, or that have no brew formula
+# because macOS already ships the tool.
+typeset -gA _MO_PKG_MACOS=(
+	[build-essential]="@xcode"      [texlive-xetex]="--cask basictex"
+	[trash-cli]="trash"             [fd-find]="fd"
+	[p7zip-full]="sevenzip"         [xz-utils]="xz"
+	[wl-clipboard]="@builtin"       [xclip]="@builtin"
+	[procps]="@builtin"             [iproute2]="@builtin"
+	[xdg-utils]="@builtin"          [bc]="@builtin"
+)
+
+# Install hint for one or more packages, phrased for the current platform:
+#   Linux  → "sudo apt install fzf"
+#   macOS  → "brew install fzf"
+# Packages macOS already provides say so instead of suggesting a bad install.
 _mo_pkg_hint() {
-	if _mo_is_macos; then
-		print -- "brew install $*"
-	else
+	if ! _mo_is_macos; then
 		print -- "sudo apt install $*"
+		return
 	fi
+
+	local pkg mapped
+	local -a formulae=()
+	for pkg in "$@"; do
+		mapped="${_MO_PKG_MACOS[$pkg]:-$pkg}"
+		case "$mapped" in
+			@xcode)   print -- "xcode-select --install"; return ;;
+			@builtin) print -- "${pkg} ships with macOS — check your PATH"; return ;;
+			*)        formulae+=("$mapped") ;;
+		esac
+	done
+	print -- "brew install ${formulae[*]}"
 }
 
 _mo_brew_prefix() {

@@ -147,7 +147,7 @@ flog() {
 		echo "Usage: flog"
 		echo "  Interactively browse git log and copy the selected commit hash."
 		echo "  Preview pane shows the commit diff stat."
-		echo "  Copies hash to clipboard (wl-copy or xclip), or prints it if neither is available."
+		echo "  Copies the hash to the system clipboard, or prints it if that fails."
 		return
 	fi
 	command -v fzf &>/dev/null || { echo "flog: fzf not installed" >&2; return 1; }
