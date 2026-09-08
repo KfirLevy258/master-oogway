@@ -1,5 +1,3 @@
-# platform-lint: linux-only — the systemd and ssh_config calls below are inside
-# the lan-ssh path, which refuses to run on macOS.
 
 _MO_INSTALL_DIR="${HOME}/.master-oogway"
 
@@ -52,7 +50,15 @@ _mo_lan_ssh_server() {
 		echo "master-oogway: sshd -t failed — drop-in removed" >&2
 		sudo rm -f "$dropin"; return 1
 	fi
-	sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true
+	if _mo_is_macos; then
+		# launchd starts sshd per connection (type = Submitted), so a new
+		# drop-in applies to the next connection with no reload at all. Kick it
+		# anyway when it happens to be resident.
+		sudo launchctl kickstart -k system/com.openssh.sshd 2>/dev/null || true
+	else
+		# platform-lint: allow — Linux half of the _mo_is_macos branch above.
+		sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true
+	fi
 	echo "master-oogway: added $dropin and reloaded sshd"
 }
 
@@ -93,15 +99,13 @@ master-oogway() {
 			echo "$_MO_INSTALL_DIR"
 			;;
 		lan-ssh)
-			# Linux-only: needs cron rather than launchd, an sshd_config.d
-			# drop-in directory macOS does not ship, and a subnet scan that
-			# triggers TCC permission prompts. Refusing beats half-working.
-			if _mo_is_macos; then
-				echo "master-oogway: lan-ssh is not supported on macOS." >&2
-				echo "  It needs cron, /etc/ssh/sshd_config.d and an nmap subnet scan;" >&2
-				echo "  launchd and TCC make a faithful port a rewrite, not a patch." >&2
-				return 1
-			fi
+			# This was gated to Linux on the grounds that macOS needs launchd
+			# rather than cron, ships no /etc/ssh/sshd_config.d, and would
+			# raise TCC prompts on the scan. All three were wrong: macOS has
+			# /usr/sbin/cron and a working crontab, /etc/ssh/sshd_config.d
+			# exists with its Include already active, and nmap -sL is a list
+			# scan that sends no packets to the hosts. The one real difference
+			# was subnet detection, which is now a primitive.
 			local action="${2:-help}"
 			local script; script=$(_mo_lan_scan_script)
 			case "$action" in

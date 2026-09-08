@@ -20,6 +20,7 @@ _dragon_render_preview() {
 		done
 
 		local preview_exit_code=0
+		# platform-lint: allow — a fake value for the preview, never read back.
 		$ssh_mode  && export SSH_TTY=/dev/pts/0
 		$fail_mode && preview_exit_code=1
 

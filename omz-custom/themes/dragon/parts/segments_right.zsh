@@ -113,6 +113,7 @@ __set_ssh_connection_count_content()
 		# ttysNNN, and any future platform will pick its own. The
 		# parenthesised source address on the next line is what actually
 		# identifies a remote session, and it is the same on both.
+		# platform-lint: allow — matches both namings on purpose.
 		[[ "$line" == *pts* || "$line" == *ttys* ]] || continue
 		local addr="${line##* }"
 		[[ "$addr" == \(* && "$addr" == *\) ]] && remote_addrs+=( "$addr" )

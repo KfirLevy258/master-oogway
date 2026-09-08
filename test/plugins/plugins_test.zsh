@@ -60,8 +60,23 @@ if _mo_is_macos; then
 		"no ip alias on macOS, which has no ip"
 	assert_eq "" "$(_mo_t mo-colorize-override 'alias dmesg 2>/dev/null')" \
 		"no dmesg alias on macOS, whose dmesg takes no --color"
-	assert_contains "$(_mo_t mo-cli 'master-oogway lan-ssh setup')" "not supported on macOS" \
-		"lan-ssh declines on macOS"
+	# NEVER `lan-ssh setup` here. It is not a query: it writes a SendEnv
+	# stanza into the tester's ~/.ssh/config, installs a crontab entry and
+	# tries to drop a file into /etc/ssh/sshd_config.d. An earlier version of
+	# this assertion relied on macOS refusing the whole subcommand; when the
+	# refusal was removed the test silently began configuring the machine it
+	# was running on. `status` and `help` only read.
+	assert_not_contains "$(_mo_t mo-cli 'master-oogway lan-ssh status' 2>&1)" \
+		"not supported on macOS" "lan-ssh is available on macOS"
+	assert_contains "$(_mo_t mo-cli 'master-oogway lan-ssh help' 2>&1)" "lan-ssh" \
+		"lan-ssh help renders"
+	# The one genuinely platform-specific piece: deriving the LAN CIDR without
+	# iproute2. Format only — the value depends on the tester's network.
+	assert_match "$(MO_LAN_SUBNET= bash -c '
+		'"$(sed -n '/^detect_subnet()/,/^}$/p' "$MO_ROOT/omz-custom/plugins/mo-cli/lan_scan.sh")"'
+		SUBNET=""; detect_subnet' 2>/dev/null)" \
+		'^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/[0-9]+$' \
+		"lan_scan derives a CIDR subnet without iproute2"
 	assert_contains "$(_mo_t mo-brew 'type bup')" "bup" "mo-brew loads on macOS"
 else
 	assert_eq "" "$(_mo_t mo-brew 'type bup 2>/dev/null')" "mo-brew declines on Linux"

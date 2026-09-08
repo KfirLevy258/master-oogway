@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# platform-lint: linux-only — lan-ssh refuses to run on macOS (needs cron, sshd_config.d, nmap).
 # ------------------------------------------------------------------------------
 # lan_scan.sh - Scan the LAN for hostnames, write per-host ssh aliases.
 #
@@ -31,12 +30,43 @@ readonly ALIAS_FILE="${MO_CONFIG_DIR}/custom-zsh/lan-hosts.zsh"
 
 # -- Subnet detection ----------------------------------------------------------
 
+# The CIDR of the default route's network. Linux reads it straight out of
+# `ip route`; macOS has no iproute2, so the default interface is resolved with
+# route(8) and its hex netmask converted to a prefix length.
 detect_subnet() {
 	[[ -n "$SUBNET" ]] && { echo "$SUBNET"; return; }
-	local iface
-	iface=$(ip route show default 2>/dev/null | awk '/default/ { print $5; exit }')
+
+	# platform-lint: allow — this is a standalone bash script run by cron, so
+	# it cannot source the zsh lib/platform.zsh; the branch is the primitive.
+	if [[ "$(uname -s)" != Darwin ]]; then
+		local iface
+		# platform-lint: allow — Linux half of the branch above.
+		iface=$(ip route show default 2>/dev/null | awk '/default/ { print $5; exit }')
+		[[ -z "$iface" ]] && return 1
+		# platform-lint: allow — Linux half of the branch above.
+		ip -o -f inet addr show "$iface" 2>/dev/null | awk '{ print $4; exit }'
+		return
+	fi
+
+	local iface addr mask
+	iface=$(route -n get default 2>/dev/null | awk '/interface:/ { print $2; exit }')
 	[[ -z "$iface" ]] && return 1
-	ip -o -f inet addr show "$iface" 2>/dev/null | awk '{ print $4; exit }'
+	read -r addr mask <<< "$(ifconfig "$iface" 2>/dev/null | awk '/inet /{ print $2, $4; exit }')"
+	[[ -z "$addr" || -z "$mask" ]] && return 1
+	# ifconfig prints the mask as 0xffffff00. Done in shell arithmetic, which
+	# understands the 0x prefix directly — awk's strtonum() is a gawk
+	# extension that the awk macOS ships does not have.
+	local m=$(( mask )) prefix=0 i
+	for (( i = 31; i >= 0; i-- )); do
+		if (( (m >> i) & 1 )); then prefix=$(( prefix + 1 )); else break; fi
+	done
+	local o1 o2 o3 o4
+	IFS=. read -r o1 o2 o3 o4 <<< "$addr"
+	local a=$(( (o1 << 24) | (o2 << 16) | (o3 << 8) | o4 ))
+	local net=$(( a & m ))
+	printf '%d.%d.%d.%d/%d\n' \
+		$(( (net >> 24) & 255 )) $(( (net >> 16) & 255 )) \
+		$(( (net >> 8) & 255 ))  $(( net & 255 )) "$prefix"
 }
 
 # -- Discovery -----------------------------------------------------------------
@@ -68,7 +98,12 @@ discover() {
 		scan_dig "$subnet"
 	else
 		# Linux-only script: lan-ssh refuses to run on macOS.
-		echo "lan_scan: need nmap or dig (sudo apt install nmap)" >&2
+		if [[ "$(uname -s)" == Darwin ]]; then   # platform-lint: allow — see detect_subnet
+			echo "lan_scan: need nmap or dig (brew install nmap)" >&2
+		else
+			# platform-lint: allow — Linux half of the branch above.
+			echo "lan_scan: need nmap or dig (sudo apt install nmap)" >&2
+		fi
 		return 1
 	fi
 }
