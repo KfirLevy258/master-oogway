@@ -175,6 +175,7 @@ plugins=(
     mo-env                     # fenv (fuzzy environment variable browser)
     mo-mkscript                # mkscript — scaffold a new shell script from template
     mo-color                   # color — terminal color preview, palette, and text colorizer
+    mo-brew                    # bup, bi, bun, bs, bl, bout — Homebrew helpers (macOS only; no-op on Linux)
     mo-man                     # mo-man <plugin> — view a mo-* plugin README (bat/less)
     mo-shell-tools             # h, ?, cwhich, vwhich, clip, vizsh, soursh, calc, epoch, mo-where
     mo-cli                     # `master-oogway` CLI: update, uninstall, version, configure, edit, diff-zshrc, path
