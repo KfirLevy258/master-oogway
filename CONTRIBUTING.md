@@ -39,7 +39,6 @@ omz-custom/                       ZSH_CUSTOM directory (sourced by oh-my-zsh)
         transient.zsh             zle hooks, transient prompt collapse
   lib/
     colors.zsh                    named xterm-256 color table — shared by dragon theme and mo-color plugin
-    clip.zsh                      clipboard helper (copy/paste wrappers)
   plugins/
     mo-*/mo-*.plugin.zsh          22 master-oogway plugins (5 override + 17 additive)
 ```

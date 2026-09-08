@@ -26,10 +26,19 @@ _mo_colorize_supports() {
 	return 0
 }
 
-_mo_colorize_supports diff /dev/null /dev/null && alias diff="diff --color=auto"
+# Probe only where the answer can actually be no. Running every candidate cost
+# four subprocesses at every shell start, on both platforms, to re-derive a
+# constant: --color=auto is supported by GNU grep and BSD grep alike, so
+# `command -v` settles those. Only diff genuinely varies — BSD diff gained
+# --color in macOS 13 — and only on macOS, since GNU diff has had it since 3.4.
+if _mo_is_macos; then
+	_mo_colorize_supports diff /dev/null /dev/null && alias diff="diff --color=auto"
+else
+	command -v diff &>/dev/null && alias diff="diff --color=auto"
+fi
 
 for _mo_c in grep egrep fgrep; do
-	_mo_colorize_supports "$_mo_c" -q x /dev/null && alias "$_mo_c=$_mo_c --color=auto"
+	command -v "$_mo_c" &>/dev/null && alias "$_mo_c=$_mo_c --color=auto"
 done
 unset _mo_c
 

@@ -6,8 +6,21 @@ alias mv="mv -i"        # prompt before overwrite
 alias mkdir="mkdir -pv" # create parents silently, print each new dir
 
 # mo-trash owns the rm-to-trash redirect and loads after this plugin, so its
-# alias wins when enabled. This is only the fallback.
-alias rm="rm -I"        # prompt when removing 3+ files or recursing
+# alias wins when enabled. This is the fallback for when it is not — and it is
+# not by default, since mo-trash is commented out in the shipped plugin list.
+#
+# Linux only, deliberately. Upstream keyed this on trash-cli being present,
+# which is an opt-in: installing trash-cli says "I want rm to trash". macOS
+# ships /usr/bin/trash on every machine, so the same test there would silently
+# redirect rm for everyone who never asked. On macOS the opt-in is enabling
+# mo-trash. Dropping this branch entirely — as the port first did — cost Linux
+# users with trash-cli a behaviour they already had.
+# platform-lint: allow — guarded by _mo_is_linux on the line above.
+if _mo_is_linux && command -v trash-put &>/dev/null; then
+	alias rm="trash-put"
+else
+	alias rm="rm -I"    # prompt when removing 3+ files or recursing
+fi
 
 _confirm_reboot() {
 	echo "This is $(hostname). Are you sure you want to reboot the system? (y/N)"

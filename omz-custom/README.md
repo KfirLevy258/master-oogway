@@ -18,7 +18,6 @@ themes/
     parts/                 segment renderers, prompt assembly
 lib/
   colors.zsh             named xterm-256 color table (shared by dragon theme and mo-color plugin)
-  clip.zsh               clipboard helper (copy/paste wrappers)
 plugins/
   mo-*/                  22 master-oogway plugins (5 overrides + 17 additive)
   gitstatus/             vendored: gitstatus (submodule)
