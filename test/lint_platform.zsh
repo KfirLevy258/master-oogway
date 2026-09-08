@@ -25,6 +25,13 @@ typeset -a banned=(
 for f in "$MO_ROOT"/omz-custom/plugins/mo-*/**/*(.N) "$MO_ROOT"/omz-custom/themes/**/*(.N); do
 	[[ "$f" == *.md ]] && continue
 	[[ "$f" == */lib/platform.zsh ]] && continue
+	# A file may opt out by declaring why, on one line, near the top. Used for
+	# code that is Linux-only by construction — lan-ssh needs cron and systemd
+	# and refuses to run on macOS — and for optional-deps metadata, which names
+	# Linux package names on purpose.
+	if command grep -qE '^#[[:space:]]*platform-lint:[[:space:]]*(linux-only|metadata)\b' "$f"; then
+		continue
+	fi
 	for pat in $banned; do
 		if command grep -nE "$pat" "$f" >/dev/null 2>&1; then
 			print -r -- "PLATFORM LINT: ${f#$MO_ROOT/} matches /$pat/"

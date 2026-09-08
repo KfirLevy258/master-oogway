@@ -1,3 +1,4 @@
+# platform-lint: metadata — names Linux package names for the installer, not executed.
 # Soft deps for mo-shell-tools — read by install.sh, never sourced at runtime.
 typeset -gA MO_OPTIONAL_DEPS=(
 	[bat]="syntax-highlighted file preview in cwhich"

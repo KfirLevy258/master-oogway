@@ -1,3 +1,5 @@
+# platform-lint: linux-only — the systemd and ssh_config calls below are inside
+# the lan-ssh path, which refuses to run on macOS.
 
 _MO_INSTALL_DIR="${HOME}/.master-oogway"
 
@@ -91,15 +93,24 @@ master-oogway() {
 			echo "$_MO_INSTALL_DIR"
 			;;
 		lan-ssh)
+			# Linux-only: needs cron rather than launchd, an sshd_config.d
+			# drop-in directory macOS does not ship, and a subnet scan that
+			# triggers TCC permission prompts. Refusing beats half-working.
+			if _mo_is_macos; then
+				echo "master-oogway: lan-ssh is not supported on macOS." >&2
+				echo "  It needs cron, /etc/ssh/sshd_config.d and an nmap subnet scan;" >&2
+				echo "  launchd and TCC make a faithful port a rewrite, not a patch." >&2
+				return 1
+			fi
 			local action="${2:-help}"
 			local script; script=$(_mo_lan_scan_script)
 			case "$action" in
 				setup)
 					if ! command -v nmap &>/dev/null; then
 						if command -v dig &>/dev/null; then
-							echo "master-oogway: nmap not found — using slower dig fallback (/24 only). Install nmap for full scans: sudo apt install nmap" >&2
+							echo "master-oogway: nmap not found — using slower dig fallback (/24 only). Install nmap for full scans: $(_mo_pkg_hint nmap)" >&2
 						else
-							echo "master-oogway: lan-ssh needs nmap to scan the LAN — install it first: sudo apt install nmap" >&2
+							echo "master-oogway: lan-ssh needs nmap to scan the LAN — install it first: $(_mo_pkg_hint nmap)" >&2
 							return 1
 						fi
 					fi

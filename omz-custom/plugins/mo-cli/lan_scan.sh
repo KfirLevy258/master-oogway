@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# platform-lint: linux-only — lan-ssh refuses to run on macOS (needs cron, sshd_config.d, nmap).
 # ------------------------------------------------------------------------------
 # lan_scan.sh - Scan the LAN for hostnames, write per-host ssh aliases.
 #
@@ -66,6 +67,7 @@ discover() {
 	elif command -v dig &>/dev/null; then
 		scan_dig "$subnet"
 	else
+		# Linux-only script: lan-ssh refuses to run on macOS.
 		echo "lan_scan: need nmap or dig (sudo apt install nmap)" >&2
 		return 1
 	fi
