@@ -53,8 +53,22 @@ assert_true "relative: yesterday is in the past" \
 assert_fail "relative: gibberish is rejected" _mo_relative_to_epoch 'not a date' 
 
 # -- clipboard ------------------------------------------------------------------
-_mo_clip "mo-clip-test-$$"
-assert_eq "mo-clip-test-$$" "$(_mo_paste)" "clip roundtrip"
+# Guarded: the Linux branch needs wl-copy/xclip/xsel and a display, and a
+# headless CI runner has neither — _mo_clip returns 1 and _mo_paste prints
+# nothing, so an unguarded assertion fails for the environment rather than for
+# the code. The e2e sweep already skips this case; the unit suite must too.
+if _mo_is_macos || _mo_paste >/dev/null 2>&1; then
+	_saved_clipboard=$(_mo_paste 2>/dev/null)
+	_mo_clip "mo-clip-test-$$"
+	assert_eq "mo-clip-test-$$" "$(_mo_paste)" "clip roundtrip"
+	# Put it back: this file runs before test/plugins, so without a restore
+	# here the save/restore there captures this sentinel instead of the
+	# tester's own clipboard.
+	[[ -n "$_saved_clipboard" ]] && _mo_clip "$_saved_clipboard"
+	unset _saved_clipboard
+else
+	print -r -- "  skip   clip roundtrip (no clipboard tool)"
+fi
 
 # -- sed ------------------------------------------------------------------------
 local tmp=$(mktemp)

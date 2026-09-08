@@ -128,16 +128,20 @@ _mo_color_pick() {
 	fi
 
 	local idx=0 buffer='' grid_top=5 cancelled=1 prev
-	local _mo_pick_stty
+	# Global, not local: zsh tears a function's locals down BEFORE running its
+	# EXIT trap, so a trap referring to a local restores `stty ""` and leaves
+	# the terminal with no echo and no Ctrl+C. Verified:
+	#   f(){ local S=x; trap 'print "[$S]"' EXIT; return 7 }; f   ->  []
+	typeset -g _MO_PICK_STTY
 	{
-		_mo_pick_stty=$(stty -g 2>/dev/null)
+		_MO_PICK_STTY=$(stty -g 2>/dev/null)
 		tput smcup; tput civis
 		# Raw mode once, for the whole session. -isig makes Ctrl+C arrive as a
 		# literal \x03 that the key reader turns into "cancel"; the restore is
 		# in the trap as well as at the end, so an unexpected exit cannot leave
 		# the terminal without echo.
 		stty -echo -icanon -isig min 1 time 0 2>/dev/null
-		trap 'stty "$_mo_pick_stty" 2>/dev/null; tput cnorm; tput rmcup' EXIT TERM HUP
+		trap 'stty "$_MO_PICK_STTY" 2>/dev/null; tput cnorm; tput rmcup' EXIT TERM HUP
 
 		_mo_pick_draw_static "$grid_top"
 		_mo_pick_draw_header "$idx" ""
@@ -193,9 +197,12 @@ _mo_color_pick() {
 			_mo_pick_draw_header "$idx" "$buffer"
 		done
 
-		stty "$_mo_pick_stty" 2>/dev/null
+		stty "$_MO_PICK_STTY" 2>/dev/null
 		tput cnorm; tput rmcup
 		trap - EXIT TERM HUP
+	} always {
+		stty "$_MO_PICK_STTY" 2>/dev/null
+		tput cnorm 2>/dev/null; tput rmcup 2>/dev/null
 	} >/dev/tty </dev/tty
 
 	(( cancelled )) && return 130

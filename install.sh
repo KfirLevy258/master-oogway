@@ -769,8 +769,14 @@ if [[ "$MO_UNINSTALL" == true ]]; then
 	if [[ -f /etc/ssh/sshd_config.d/99-master-oogway-acceptenv.conf ]]; then
 		if confirm "Remove sshd AcceptEnv drop-in and reload sshd? (sudo)"; then
 			sudo rm -f /etc/ssh/sshd_config.d/99-master-oogway-acceptenv.conf
-			# Linux-only: lan-ssh is not offered on macOS.
-			sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true
+			# lan-ssh runs on macOS now, so this can no longer assume systemd.
+			# launchd starts sshd per connection, so the removal already
+			# applies to the next one; kick it only if it happens to be up.
+			if _mo_is_macos; then
+				sudo launchctl kickstart -k system/com.openssh.sshd 2>/dev/null || true
+			else
+				sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true
+			fi
 			success "Removed sshd AcceptEnv drop-in"
 		fi
 	fi

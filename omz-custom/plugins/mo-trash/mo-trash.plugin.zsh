@@ -257,12 +257,29 @@ trash-prune() {
 	(( ${#old} )) || { echo "trash-prune: nothing older than ${days} day(s)"; return 0 }
 	printf '  %s\n' "${old[@]:t}"
 	command rm -rf -- "${old[@]}"
-	# Drop the pruned names so the index does not grow without bound and
-	# trash-list stops offering entries that are gone.
-	if [[ -w "$MO_TRASH_INDEX" ]]; then
-		local tmp="${MO_TRASH_INDEX}.tmp$$"
-		awk -F'\t' -v dir="$MO_TRASH_DIR" \
-			'{ p = dir "/" $2; if (system("[ -e \"" p "\" ]") == 0) print }' \
-			"$MO_TRASH_INDEX" > "$tmp" 2>/dev/null && command mv "$tmp" "$MO_TRASH_INDEX"
-	fi
+	_mo_trash_compact_index
+}
+
+# Drop index entries whose file is gone, so the index does not grow without
+# bound and trash-list stops offering entries that no longer exist.
+#
+# Done in zsh, not awk. The obvious awk form splices field 2 into a string
+# handed to system(), and field 2 is a filename the user never sanitised:
+#
+#     { p = dir "/" $2; if (system("[ -e \"" p "\" ]") == 0) print }
+#
+# A file named  a";echo PWNED;"b  then executes echo. _mo_trash_rm writes the
+# landed basename verbatim, so trashing a file from an untrusted archive and
+# later running trash-prune would run whatever its name contained.
+_mo_trash_compact_index() {
+	[[ -w "$MO_TRASH_INDEX" ]] || return 0
+	local tmp="${MO_TRASH_INDEX}.tmp$$"
+	local ts name orig
+	: > "$tmp" || return 0
+	while IFS=$'\t' read -r ts name orig; do
+		[[ -n "$name" ]] || continue
+		[[ -e "${MO_TRASH_DIR}/${name}" ]] || continue
+		printf '%s\t%s\t%s\n' "$ts" "$name" "$orig" >> "$tmp"
+	done < "$MO_TRASH_INDEX"
+	command mv "$tmp" "$MO_TRASH_INDEX" 2>/dev/null || command rm -f "$tmp"
 }

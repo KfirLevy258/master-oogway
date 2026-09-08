@@ -7,9 +7,18 @@
 # sources, an alias shadowed by load order, a plugin that ships disabled. That
 # is what this catches.
 #
-# Your own HOME is never touched: everything happens under a mktemp -d, and the
-# only shared state is the system clipboard and (on macOS) the real ~/.Trash,
-# because /usr/bin/trash always writes there regardless of $HOME.
+# Your own HOME is mostly untouched: everything happens under a mktemp -d. But
+# three pieces of state are per-USER, not per-HOME, and no relocation isolates
+# them:
+#
+#   crontab       crontab(1) reads the system spool and ignores $HOME entirely
+#                 (HOME=/tmp crontab -l prints your real crontab), and the
+#                 uninstall path removes the lan-scan line.
+#   ~/.ssh/config the uninstall path strips its SendEnv stanza.
+#   ~/.Trash      /usr/bin/trash writes there regardless of $HOME (macOS).
+#
+# The first two are snapshotted and restored below. The clipboard is also
+# clobbered by the sweep.
 #
 # Usage:  bash test/e2e/run.sh
 set -euo pipefail
@@ -30,7 +39,30 @@ else
 fi
 
 TH="$(mktemp -d)"
-cleanup() { rm -rf "$TH"; }
+
+# Snapshot the per-user state the uninstall path reaches, so a developer who
+# has actually run `master-oogway lan-ssh setup` does not lose it to a test.
+CRONTAB_SNAP="$TH/.crontab.snapshot"
+crontab -l > "$CRONTAB_SNAP" 2>/dev/null || : > "$CRONTAB_SNAP"
+SSHCFG_SNAP="$TH/.sshconfig.snapshot"
+SSHCFG_EXISTED=0
+if [[ -f "$HOME/.ssh/config" ]]; then
+	cp "$HOME/.ssh/config" "$SSHCFG_SNAP"; SSHCFG_EXISTED=1
+fi
+
+restore_user_state() {
+	if [[ -s "$CRONTAB_SNAP" ]]; then
+		crontab "$CRONTAB_SNAP" 2>/dev/null || true
+	else
+		# Only clear it if it was empty to begin with.
+		crontab -r 2>/dev/null || true
+	fi
+	if (( SSHCFG_EXISTED )); then
+		mkdir -p "$HOME/.ssh"; cp "$SSHCFG_SNAP" "$HOME/.ssh/config"
+	fi
+}
+
+cleanup() { restore_user_state; rm -rf "$TH"; }
 trap cleanup EXIT
 
 ln -s "$OMZ" "$TH/.oh-my-zsh"

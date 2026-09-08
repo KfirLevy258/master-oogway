@@ -50,8 +50,11 @@ _mo_lan_ssh_client() {
 # Server side: AcceptEnv DRAGON__PAYLOAD drop-in, validated with sshd -t (sudo).
 _mo_lan_ssh_server() {
 	local dropin="/etc/ssh/sshd_config.d/99-master-oogway-acceptenv.conf"
-	if [[ ! -f /etc/ssh/sshd_config ]]; then
-		echo "master-oogway: sshd not found — skipping AcceptEnv (not a server)"
+	if ! _mo_sshd_is_server; then
+		echo "master-oogway: this host is not accepting SSH — skipping AcceptEnv."
+		echo "  Nothing is listening on port 22. Enable Remote Login (macOS:"
+		echo "  System Settings -> General -> Sharing) or start sshd, then re-run"
+		echo "  'master-oogway lan-ssh setup' to add the drop-in."
 		return 0
 	fi
 	if [[ -f "$dropin" ]]; then

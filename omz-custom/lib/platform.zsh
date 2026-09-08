@@ -84,8 +84,13 @@ _mo_date_to_epoch() {
 	if _mo_is_macos; then
 		# -j parses without setting the clock; -f gives the input format. Without
 		# -u this reads the string in local time, which is what `date -d` does.
-		date $flags -j -f '%Y-%m-%d %H:%M:%S' "$input" '+%s' 2>/dev/null \
-			|| date $flags -j -f '%Y-%m-%d' "$input" '+%s' 2>/dev/null
+		# BSD date fills unspecified fields from the current clock, not from
+		# midnight, so a bare date parsed to a different timestamp every run
+		# and disagreed with GNU date. Supply the time explicitly. The strict
+		# full-datetime attempt comes first so a malformed string still fails.
+		date $flags -j -f '%Y-%m-%d %H:%M:%S' "$input" '+%s' 2>/dev/null && return
+		[[ "$input" =~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$' ]] || return 1
+		date $flags -j -f '%Y-%m-%d %H:%M:%S' "$input 00:00:00" '+%s' 2>/dev/null
 	else
 		date $flags -d "$input" '+%s' 2>/dev/null
 	fi
@@ -105,16 +110,33 @@ _mo_relative_to_epoch() {
 	if command -v gdate &>/dev/null; then
 		gdate -d "$expr" '+%s' 2>/dev/null && return
 	fi
+	# BSD date -v understands y/m/w/d/H/M/S and the three-letter weekday names,
+	# and it PREFIX-MATCHES them: -v-month and -v-mon are byte-identical, so
+	# "last month" silently resolved to last Monday. Map the calendar units
+	# explicitly and only pass through real weekday names.
+	local -A unit=( day d week w month m year y )
 	local -a adj=()
+	local word
 	case "$expr" in
-		now|today)      adj=() ;;
+		now|today)      adj=(-v0H -v0M -v0S) ;;
 		yesterday)      adj=(-v-1d -v0H -v0M -v0S) ;;
 		tomorrow)       adj=(-v+1d -v0H -v0M -v0S) ;;
-		"last "[a-z]##) adj=(-v-${expr#last }  -v0H -v0M -v0S) ;;
-		"next "[a-z]##) adj=(-v+${expr#next }  -v0H -v0M -v0S) ;;
-		<->" days ago")   adj=(-v-${expr%% *}d) ;;
-		<->" weeks ago")  adj=(-v-${expr%% *}w) ;;
-		<->" months ago") adj=(-v-${expr%% *}m) ;;
+		"last "*|"next "*)
+			local sign=-; [[ "$expr" == next* ]] && sign=+
+			word="${expr#* }"
+			if [[ -n "${unit[$word]:-}" ]]; then
+				adj=(-v${sign}1${unit[$word]} -v0H -v0M -v0S)
+			elif [[ "$word" == (mon|tue|wed|thu|fri|sat|sun)* ]]; then
+				adj=(-v${sign}${word[1,3]} -v0H -v0M -v0S)
+			else
+				return 1
+			fi
+			;;
+		<->" "(day|week|month|year)"s ago"|<->" "(day|week|month|year)" ago")
+			word="${${expr#* }%% ago}"; word="${word%s}"
+			[[ -n "${unit[$word]:-}" ]] || return 1
+			adj=(-v-${expr%% *}${unit[$word]})
+			;;
 		*) return 1 ;;
 	esac
 	date "${adj[@]}" '+%s' 2>/dev/null
@@ -299,9 +321,24 @@ _mo_default_subnet_cidr() {
 	local iface addr mask
 	iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
 	[[ -n "$iface" ]] || return 1
+	# Locate the fields by keyword, not position: a point-to-point interface
+	# (any full-tunnel VPN makes the default route a utunN) prints
+	# "inet 10.8.0.1 --> 10.8.0.2 netmask 0xffffffff", where $4 is the PEER
+	# address. Feeding that to the arithmetic below aborts the shell with
+	# "bad floating point constant", past any || return the caller wrote.
 	read -r addr mask <<< "$(ifconfig "$iface" 2>/dev/null \
-		| awk '/inet /{print $2, $4; exit}')"
+		| awk '/inet /{
+			for (i = 1; i <= NF; i++) {
+				if ($i == "inet")    a = $(i+1)
+				if ($i == "netmask") m = $(i+1)
+			}
+			if (a != "" && m != "") { print a, m; exit }
+		}')"
 	[[ -n "$addr" && -n "$mask" ]] || return 1
+	# Only a hex mask is safe to feed to $(( )). Written as a regex, not an
+	# extended-glob pattern: this file is sourced before any setopt runs, and
+	# under `zsh -f` an EXTENDED_GLOB pattern silently fails to match.
+	[[ "$mask" =~ '^0x[0-9a-fA-F]+$' ]] || return 1
 	# ifconfig prints the mask as 0xffffff00; count its bits for the prefix and
 	# AND it with the address for the network.
 	local -i m=$(( ${mask} )) prefix=0 i
@@ -325,18 +362,43 @@ _mo_ssh_peer() {
 	local ip="$1"
 	[[ -n "$ip" ]] || return 1
 	if _mo_is_macos; then
+		# netstat columns: Proto Recv-Q Send-Q Local Foreign (state). The
+		# foreign address is $5, written 192.168.1.9.51234 — dot, not colon.
+		# Anchor the match on the whole address: a bare prefix test let peer
+		# 192.168.1.9 also match 192.168.1.90.
 		netstat -an -p tcp 2>/dev/null | awk -v ip="$ip" '
-			$NF == "ESTABLISHED" && index($5, ip) == 1 {
-				# netstat writes 192.168.1.9.51234 — the port is the last field.
-				n = split($5, a, ".")
+			$NF == "ESTABLISHED" {
+				addr = $5
+				n = split(addr, a, ".")
 				port = a[n]
-				sub(/\.[0-9]+$/, "", $5)
-				print $5 ":" port
-				exit
+				sub(/\.[0-9]+$/, "", addr)
+				if (addr == ip) { print addr ":" port; exit }
 			}'
 	else
-		ss -tnp 2>/dev/null \
-			| awk -v ip="$ip" '$0 ~ ip && /sshd/ {print $4; exit}'
+		# ss -tn columns: State Recv-Q Send-Q Local-Address:Port
+		# Peer-Address:Port. $4 is this host's OWN address, so reporting it
+		# overwrote the client IP with our own, identically for every row.
+		# The peer is $5.
+		ss -tnp 2>/dev/null | awk -v ip="$ip" '
+			/sshd/ && index($5, ip ":") == 1 { print $5; exit }'
+	fi
+}
+
+# True when this host actually accepts SSH, i.e. writing an sshd drop-in is
+# meaningful. The obvious test — does /etc/ssh/sshd_config exist — is
+# Debian-shaped: there the file arrives with openssh-server, but macOS ships it
+# with the base OS whether or not Remote Login is ever switched on, so it never
+# fired and setup would sudo a config file onto a machine that is not a server.
+#
+# launchctl is no help either: with Remote Login OFF it still reports
+# com.openssh.sshd as "enabled" and `launchctl print` exits 0. A listener on
+# port 22 is the thing that is actually true only when the service is running.
+_mo_sshd_is_server() {
+	if _mo_is_macos; then
+		command -v lsof &>/dev/null || return 1
+		lsof -nP -iTCP:22 -sTCP:LISTEN >/dev/null 2>&1
+	else
+		[[ -f /etc/ssh/sshd_config ]]
 	fi
 }
 
@@ -375,10 +437,15 @@ _mo_runtime_dir() {
 _mo_font_installed() {
 	local family="$1"
 	if _mo_is_macos; then
+		setopt local_options extended_glob null_glob
+		# Font files may spell a family with the spaces removed
+		# (JetBrainsMonoNL-Regular.ttf) or kept (Andale Mono.ttf), so match a
+		# pattern that allows either at each gap rather than stripping them.
+		local pat="${family// /*}"
 		local -a hits=(
-			/System/Library/Fonts/**/${~family//[ ]/}*(#qN.)
-			/Library/Fonts/**/${~family//[ ]/}*(#qN.)
-			${HOME}/Library/Fonts/**/${~family//[ ]/}*(#qN.)
+			/System/Library/Fonts/**/${~pat}*(N.)
+			/Library/Fonts/**/${~pat}*(N.)
+			${HOME}/Library/Fonts/**/${~pat}*(N.)
 		)
 		(( ${#hits} > 0 ))
 	else
@@ -447,8 +514,15 @@ _mo_untar() {
 _mo_cat_raw() {
 	if _mo_is_macos; then
 		local -a args=(); local a
+		local -i seen_ddash=0
 		for a in "$@"; do
-			[[ "$a" == -[a-zA-Z]#A[a-zA-Z]# ]] && a="${a//A/vet}"
+			# Everything after -- is an operand, and a file may legitimately
+			# be named -A.
+			(( seen_ddash )) && { args+=("$a"); continue }
+			[[ "$a" == "--" ]] && { seen_ddash=1; args+=("$a"); continue }
+			# Short-option clusters only: a long option such as --show-all is
+			# not -A's spelling and BSD cat has no long options at all.
+			[[ "$a" == --* ]] || [[ "$a" != -*A* ]] || a="${a//A/vet}"
 			args+=("$a")
 		done
 		command cat "${args[@]}"

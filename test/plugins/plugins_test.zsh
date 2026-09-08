@@ -35,11 +35,15 @@ assert_eq "1699992800" "$(TZ=Asia/Jerusalem _mo_t mo-shell-tools "epoch '2023-11
 # clip must actually reach the clipboard, not fall through to printing.
 # Save and restore it: running the suite should not cost the tester whatever
 # they had copied.
-local _saved_clip
-_saved_clip=$(_mo_paste 2>/dev/null)
-_mo_t mo-shell-tools "print -- clip-probe-$$ | clip" >/dev/null 2>&1
-assert_eq "clip-probe-$$" "$(_mo_paste)" "clip writes to the system clipboard"
-[[ -n "$_saved_clip" ]] && _mo_clip "$_saved_clip"
+if _mo_is_macos || _mo_paste >/dev/null 2>&1; then
+	local _saved_clip
+	_saved_clip=$(_mo_paste 2>/dev/null)
+	_mo_t mo-shell-tools "print -- clip-probe-$$ | clip" >/dev/null 2>&1
+	assert_eq "clip-probe-$$" "$(_mo_paste)" "clip writes to the system clipboard"
+	[[ -n "$_saved_clip" ]] && _mo_clip "$_saved_clip"
+else
+	print -r -- "  skip   clip writes to the system clipboard (no clipboard tool)"
+fi
 
 assert_match "$(_mo_t mo-build '_mo_build_jobs_value')" '^[0-9]+$' "build job count is numeric"
 assert_true "build uses more than one core" "$(_mo_t mo-build '_mo_build_jobs_value') > 1"

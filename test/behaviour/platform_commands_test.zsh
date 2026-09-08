@@ -152,8 +152,15 @@ if [[ -r "$_pick" ]]; then
 		"the key reader does not set raw mode per keystroke"
 	assert_not_contains "$_reader" 'stty "$stty_save"' \
 		"the key reader does not restore the tty per keystroke"
-	assert_contains "$(<$_pick)" 'trap '\''stty "$_mo_pick_stty"' \
+	assert_contains "$(<$_pick)" 'stty "$_MO_PICK_STTY"' \
 		"the picker restores the tty from its trap"
+	# The saved mode must be global. zsh tears a function's locals down before
+	# running its EXIT trap, so a trap naming a local restores `stty ""` and
+	# leaves the terminal with no echo and no Ctrl+C.
+	assert_contains "$(<$_pick)" 'typeset -g _MO_PICK_STTY' \
+		"the saved tty mode outlives the function's locals"
+	assert_contains "$(<$_pick)" '} always {' \
+		"the picker also restores the tty from an always block"
 	assert_eq "1" "$(command grep -c 'stty -echo -icanon -isig' "$_pick")" \
 		"raw mode is set exactly once, around the whole loop"
 	# The Esc timeout must stay zsh's own: `read -k` re-applies VMIN/VTIME from

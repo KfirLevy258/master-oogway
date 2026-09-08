@@ -51,8 +51,18 @@ detect_subnet() {
 	local iface addr mask
 	iface=$(route -n get default 2>/dev/null | awk '/interface:/ { print $2; exit }')
 	[[ -z "$iface" ]] && return 1
-	read -r addr mask <<< "$(ifconfig "$iface" 2>/dev/null | awk '/inet /{ print $2, $4; exit }')"
+	# By keyword, not position: a point-to-point interface prints
+	# "inet A --> B netmask 0x...", so $4 is the peer address, and the
+	# arithmetic below then dies with an invalid-operator error.
+	read -r addr mask <<< "$(ifconfig "$iface" 2>/dev/null | awk '/inet /{
+			for (i = 1; i <= NF; i++) {
+				if ($i == "inet")    a = $(i+1)
+				if ($i == "netmask") m = $(i+1)
+			}
+			if (a != "" && m != "") { print a, m; exit }
+		}')"
 	[[ -z "$addr" || -z "$mask" ]] && return 1
+	[[ "$mask" =~ ^0x[0-9a-fA-F]+$ ]] || return 1
 	# ifconfig prints the mask as 0xffffff00. Done in shell arithmetic, which
 	# understands the 0x prefix directly — awk's strtonum() is a gawk
 	# extension that the awk macOS ships does not have.

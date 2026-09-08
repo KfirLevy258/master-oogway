@@ -26,19 +26,19 @@ _mo_colorize_supports() {
 	return 0
 }
 
-# Probe only where the answer can actually be no. Running every candidate cost
-# four subprocesses at every shell start, on both platforms, to re-derive a
-# constant: --color=auto is supported by GNU grep and BSD grep alike, so
-# `command -v` settles those. Only diff genuinely varies — BSD diff gained
-# --color in macOS 13 — and only on macOS, since GNU diff has had it since 3.4.
-if _mo_is_macos; then
-	_mo_colorize_supports diff /dev/null /dev/null && alias diff="diff --color=auto"
-else
-	command -v diff &>/dev/null && alias diff="diff --color=auto"
-fi
+# Probe every candidate on every platform, as upstream did.
+#
+# An earlier version of this file kept the probe only on macOS and used a bare
+# `command -v` on Linux, to save four subprocesses at shell start. That traded
+# correctness for startup time, against this file's own header: GNU diff gained
+# --color in 3.4 (2016), so RHEL 7 and Debian jessie ship one that has not, and
+# busybox grep has no --color at all. On those systems `command -v` succeeds
+# and the alias replaces a working command with a broken one — which is exactly
+# what the probe exists to prevent.
+_mo_colorize_supports diff /dev/null /dev/null && alias diff="diff --color=auto"
 
 for _mo_c in grep egrep fgrep; do
-	command -v "$_mo_c" &>/dev/null && alias "$_mo_c=$_mo_c --color=auto"
+	_mo_colorize_supports "$_mo_c" -q x /dev/null && alias "$_mo_c=$_mo_c --color=auto"
 done
 unset _mo_c
 

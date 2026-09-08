@@ -20,16 +20,36 @@ source "${0:h}/requirements.zsh" || return
 # So: bind the value, and always pass an operand. `ls` is a function rather
 # than an alias because deciding whether an operand is present needs to look
 # at the arguments.
+# Options whose value is a separate word. Treating that value as a path was
+# the bug in the first version of this function: `ls -L 1` read "1" as the
+# operand, so no "." was appended and eza fell back to reading stdin — which
+# in a pipeline or preview pane lists nothing, or blocks.
+typeset -ga _MO_EZA_VALUE_OPTS=(
+	-L --level -I --ignore-glob -s --sort -t --time
+	--time-style --color --colour --absolute --git-repos
+)
+
 _mo_eza_ls() {
 	local arg
+	local -i want_value=0 have_operand=0 seen_ddash=0
 	for arg in "$@"; do
-		# The first non-option word is a path operand, so eza has something to
-		# list and will not fall back to reading stdin.
-		[[ "$arg" == -* ]] && continue
-		eza --classify=auto "$@"
-		return
+		if (( seen_ddash )); then have_operand=1; break; fi
+		if (( want_value )); then want_value=0; continue; fi
+		if [[ "$arg" == "--" ]]; then seen_ddash=1; continue; fi
+		if [[ "$arg" == -* ]]; then
+			# --opt=value carries its own value; --opt may take the next word.
+			[[ "$arg" != *=* ]] && (( ${_MO_EZA_VALUE_OPTS[(Ie)$arg]} )) && want_value=1
+			continue
+		fi
+		have_operand=1
+		break
 	done
-	eza --classify=auto "$@" .
+	if (( have_operand )); then
+		eza --classify=auto "$@"
+	else
+		# An explicit operand is what stops eza reading path names from stdin.
+		eza --classify=auto "$@" .
+	fi
 }
 
 alias ls="_mo_eza_ls"   # --hyperlink has a known bug when piping

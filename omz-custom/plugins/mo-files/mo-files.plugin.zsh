@@ -69,8 +69,12 @@ _mo_extract_zip() {
 	fi
 	# -o only when merging: without an overwrite policy unzip stops on an
 	# interactive "replace ...? [y]es,[n]o,[A]ll" prompt that nothing answers.
+	# $force_merge holds the WORD "true" or "false", so -n was always true and
+	# -o was passed on every extraction — silently overwriting on a duplicate
+	# entry, in the one function whose entire purpose is safe extraction of an
+	# untrusted zip. Run it as the command it is, the way line 66 already does.
 	local -a policy=()
-	[[ -n "$force_merge" ]] && policy=(-o)
+	$force_merge && policy=(-o)
 	# No -K. It means "keep setuid/setgid/sticky bits from the archive", which
 	# is the opposite of what the rest of this function is for: everything
 	# above exists to make extracting an untrusted zip safe. Dropping it lets

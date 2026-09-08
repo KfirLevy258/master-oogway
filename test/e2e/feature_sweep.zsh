@@ -3,17 +3,41 @@ typeset -gi PASS=0 FAIL=0 SKIP=0
 typeset -ga FAILED=()
 
 # macOS has no timeout(1); perl's alarm is always present.
-_t() { perl -e 'alarm shift; exec @ARGV' "$1" "${@:2}" 2>&1 }
+#
+# MO_WELCOME_FIELDS= in the child's ENVIRONMENT, not in the command: mo-welcome
+# prints its banner when the plugin is sourced, so setting the variable inside
+# the command runs far too late. Without this every nested shell prefixes its
+# output with the banner, which silently defeats any anchored assertion — and
+# made an empty needle look like a reasonable choice in the first place.
+_t() { perl -e 'alarm shift; exec @ARGV' "$1" env MO_WELCOME_FIELDS= "${@:2}" 2>&1 }
 
 ok()   { print -r -- "  \e[32mPASS\e[0m  $1"; (( PASS++ )) }
 bad()  { print -r -- "  \e[31mFAIL\e[0m  $1${2:+  — $2}"; (( FAIL++ )); FAILED+=("$1") }
 skip() { print -r -- "  \e[33mSKIP\e[0m  $1${2:+  — $2}"; (( SKIP++ )) }
 
 # check <label> <expected-substring> <command...>
+# check <label> <expected-substring> <command...>
+#
+# An empty needle matches every string, including "command not found", so it
+# turns an assertion into a no-op. Refuse it: use checkmatch for a shape, or
+# checkrc when only the status matters.
 check() {
 	local label="$1" want="$2"; shift 2
+	if [[ -z "$want" ]]; then
+		bad "$label" "empty needle — use checkmatch or checkrc"
+		return
+	fi
 	local out; out=$(_t 15 zsh -ic "$*" 2>&1)
 	if [[ "$out" == *"$want"* ]]; then ok "$label"
+	else bad "$label" "got: ${${out//$'\n'/ | }[1,90]}"; fi
+}
+
+# checkmatch <label> <ere> <command...> — for output whose exact text depends
+# on the machine but whose shape does not.
+checkmatch() {
+	local label="$1" re="$2"; shift 2
+	local out; out=$(_t 15 zsh -ic "$*" 2>&1)
+	if [[ "$out" =~ $re ]]; then ok "$label"
 	else bad "$label" "got: ${${out//$'\n'/ | }[1,90]}"; fi
 }
 # checkrc <label> <expected-rc> <command...>
@@ -34,11 +58,14 @@ check "lib/*.zsh sourced"          "function" 'type -w _mo_clip'
 print -r -- "\n\e[1m── mo-shell-tools ──\e[0m"
 check "calc"                       "1024"        'calc "2^10"'
 check "calc rejects injection"     "invalid"     'calc "foo;rm" 2>&1'
-check "epoch now"                  ""            'epoch'
+checkmatch "epoch now"             '^[0-9]{10}$'  'epoch'
 check "epoch ts -> date"           "2023-11-14"  'epoch --utc 1700000000'
-check "epoch ISO -> ts (local)"    "1699992800"  "epoch '2023-11-14 22:13:20'"
-check "epoch ISO -> ts (--utc)"    "1700000000"  "epoch --utc '2023-11-14 22:13:20'"
-check "epoch relative"             ""            'epoch yesterday'
+# Pin TZ. The earlier form asserted 1699992800, which is only the UTC+2
+# reading — it failed on the UTC CI runners and for any contributor outside
+# that zone. This is the same mistake the unit suite was just fixed for.
+check "epoch ISO -> ts (--utc)"    "1700000000"  "TZ=Asia/Jerusalem epoch --utc '2023-11-14 22:13:20'"
+check "epoch ISO -> ts (local)"    "1699992800"  "TZ=Asia/Jerusalem epoch '2023-11-14 22:13:20'"
+checkmatch "epoch relative"        '^[0-9]{10}$'  'epoch yesterday'
 checkrc "epoch rejects gibberish"  1             'epoch "not a date"'
 # _mo_paste, not pbpaste: the Linux branch uses wl-paste/xclip, and a headless
 # runner has neither, so the check is skipped rather than failed there.
@@ -54,7 +81,7 @@ check "cwhich"                     "/"           'cwhich git'
 
 print -r -- "\n\e[1m── mo-files ──\e[0m"
 check "compress .tar.gz"  "Created"   "cd $SB && mkdir -p s && echo hi > s/f.txt && compress a.tar.gz s"
-check "extract .tar.gz"   ""          "cd $SB && mkdir -p o && cd o && tar -czf x.tar.gz -C ../s f.txt && extract x.tar.gz && cat f.txt"
+check "extract .tar.gz"   "hi"        "cd $SB && mkdir -p o && cd o && tar -czf x.tar.gz -C ../s f.txt && extract x.tar.gz && cat f.txt"
 # A zip whose entry really is ../evil — `zip` refuses to store one, so the
 # path is rewritten in the archive bytes after the fact.
 if python3 -c 'import zipfile' 2>/dev/null; then
@@ -95,14 +122,16 @@ checkrc "mkscript no-arg rc=1" 1 'mkscript'
 print -r -- "\n\e[1m── mo-process ──\e[0m"
 check "psgrep"          "zsh"      'psgrep zsh | head -1'
 check "port validates"  "invalid"  'port abc 2>&1'
-check "connected"       ""         'connected 2>&1 | head -1'
+# Either a session table or the explicit "no inbound" line; anything else
+# (a parse error, an empty string) is a failure.
+checkmatch "connected" '(no inbound SSH sessions|from)' 'connected 2>&1 | head -1'
 checkrc "connected -v does not die on ss" 1 'connected -v'
 
 print -r -- "\n\e[1m── mo-search ──\e[0m"
 check "grep colorized"    "--color"  'alias grep'
 check "f finds a file"    "f.txt"    "cd $SB && f f.txt"
 if man -k . >/dev/null 2>&1 && [[ -n "$(man -k . 2>/dev/null | head -1)" ]]; then
-	check "man -k . populated" "" 'man -k . 2>/dev/null | head -1'
+	checkmatch "man -k . populated" '\(.*\)' 'man -k . 2>/dev/null | head -1'
 else
 	skip "man -k . populated" "no whatis database"
 fi
@@ -114,7 +143,7 @@ else skip "frg pipeline" "rg or fzf absent"; fi
 print -r -- "\n\e[1m── mo-trash ──\e[0m"
 if [[ -n "$(_mo_trash_tool 2>/dev/null)" ]]; then
   print -- keep > "$SB/e2e-trash-$$.txt"
-  check "rm trashes"        ""            "cd $SB && rm e2e-trash-$$.txt; [[ -e e2e-trash-$$.txt ]] && print STILL || print gone"
+  check "rm trashes"        "gone"        "cd $SB && rm e2e-trash-$$.txt; [[ -e e2e-trash-$$.txt ]] && print STILL || print gone"
   if _mo_is_macos; then
     check "index records path" "$SB"      "grep e2e-trash-$$ \${MO_TRASH_INDEX:-\$HOME/.config/master-oogway/trash-index.tsv} | tail -1"
   else
@@ -134,14 +163,25 @@ if [[ -n "$(_mo_trash_tool 2>/dev/null)" ]]; then
 else skip "mo-trash" "no trash tool"; fi
 
 print -r -- "\n\e[1m── mo-welcome ──\e[0m"
+typeset -A _wre=(
+	[host]='.+@.+'            [os]='[A-Za-z]'
+	[sys]='[0-9]+\.[0-9]+'    [up]='[0-9]+[dhm]'
+	[load]='[0-9]+\.[0-9]+'   [mem]='[0-9.]+ */ *[0-9.]+ *GB'
+	[disk]='[0-9]+%'          [arch]='(arm64|x86_64|aarch64)'
+)
 for fld in host os sys up load mem disk arch; do
-  check "welcome:$fld" "" "MO_WELCOME_FIELDS= ; _mo_welcome_field_$fld"
+  # A needle per field: an empty one matched "command not found" too, so
+  # these passed even when the plugin never loaded.
+  checkmatch "welcome:$fld" "${_wre[$fld]}" "MO_WELCOME_FIELDS= ; _mo_welcome_field_$fld"
 done
 
 print -r -- "\n\e[1m── mo-cli ──\e[0m"
 check "master-oogway version" "master-oogway" 'master-oogway version'
 check "master-oogway help"    "configure"     'master-oogway help'
-check "lan-ssh not refused"   ""              'master-oogway lan-ssh status 2>&1 | head -1'
+assert_not_refused=$(_t 15 zsh -ic 'master-oogway lan-ssh status 2>&1' 2>&1)
+if [[ "$assert_not_refused" == *"not supported on macOS"* ]]; then
+	bad "lan-ssh not refused" "still gated"
+else ok "lan-ssh not refused"; fi
 checkrc "unknown subcommand rc=1" 1           'master-oogway bogus'
 
 print -r -- "\n\e[1m── mo-safety-override / colorize ──\e[0m"
@@ -160,7 +200,7 @@ fi
 
 print -r -- "\n\e[1m── platform primitives ──\e[0m"
 check "core summary"  "+"          '_mo_core_summary'
-check "disk pct"      ""           '_mo_disk_pct'
+checkmatch "disk pct" '^[0-9]+$' '_mo_disk_pct'
 if [[ -n "$(_mo_local_ip)" ]]; then
 	check "local ip"  "."   '_mo_local_ip'
 else

