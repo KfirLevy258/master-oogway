@@ -106,18 +106,27 @@ fman() {
 	fi
 	command -v fzf &>/dev/null || { echo "fman: fzf not installed" >&2; return 1; }
 	local page
-	# man -k prints "name (sec) - desc" — or "a, b (sec) - desc" for grouped
-	# aliases, so the (sec) field is found by scanning, not assumed at $2.
-	page=$(man -k '' 2>/dev/null \
+	# `man -k ''` matches everything under man-db but nothing under mandoc,
+	# which macOS uses — the keyword is a regex there, so the picker came up
+	# empty. `.` means "any character" to both and matches every page.
+	#
+	# The two also print different shapes: man-db separates the section
+	# ("ls (1)  - list"), mandoc glues it on ("ls(1) - list"), and either may
+	# group aliases ("a, b(1) - ..."). One regex covers both by matching the
+	# first name-plus-section token wherever the parenthesis falls.
+	local parse='
+		{
+			if (!match($0, /[A-Za-z0-9_.:@\[\]-]+[ ]?\([0-9a-zA-Z]+\)/)) next
+			tok = substr($0, RSTART, RLENGTH)
+			p = index(tok, "(")
+			name = substr(tok, 1, p - 1); sub(/[ ,]+$/, "", name)
+			sec  = substr(tok, p + 1);    sub(/\)$/, "", sec)
+			print sec, name
+		}'
+	page=$(man -k . 2>/dev/null \
 		| fzf --height=50% --reverse \
-			  --preview 'man $(echo {2} | tr -d "()") $(echo {1} | tr -d ",") 2>/dev/null || man $(echo {1} | tr -d ",")' \
-		| awk '{
-			sec = ""
-			for (i = 2; i <= NF; i++) if ($i ~ /^\([0-9a-zA-Z]+\)$/) { sec = $i; break }
-			gsub(/[()]/, "", sec)
-			name = $1; sub(/,$/, "", name)
-			if (sec != "") print sec, name; else print name
-		}')
+			  --preview "echo {} | awk '${parse}' | xargs -r man 2>/dev/null || true" \
+		| awk "$parse")
 	[[ -n "$page" ]] || return 0
 	man ${=page}
 }
@@ -133,8 +142,14 @@ frg() {
 	command -v rg  &>/dev/null || { echo "frg: rg not installed (try: $(_mo_pkg_hint ripgrep))" >&2; return 1; }
 	local dir="${1:-.}"
 	[[ -d "$dir" ]] || { echo "frg: not a directory: $dir" >&2; return 1; }
+	# tr the NUL to a tab before awk: BSD/BWK awk (macOS /usr/bin/awk) cannot
+	# use NUL as a field separator — it reads the record as one field, so the
+	# NF == 2 guard never fired and the picker stayed empty no matter what was
+	# typed. rg emits exactly one NUL per record, so the swap is lossless, and
+	# a literal tab in a filename is already rejected below. No-op on gawk.
 	local rg_cmd="[[ -z {q} ]] && true || rg --color=always --line-number --null -- {q} '$dir' 2>/dev/null \
-		| awk 'BEGIN { FS=\"\\0\" }
+		| tr '\\0' '\\t' \
+		| awk 'BEGIN { FS=\"\\t\" }
 		       NF == 2 {
 		           f = \$1; rest = \$2
 		           gsub(/\\033\\[[0-9;]*m/, \"\", f)
@@ -161,8 +176,12 @@ frg() {
 			# "hx {file}:{line}" for Helix). %f = file, %l = line number.
 			# Defaults: code → "code -g %f:%l", everything else → vim "+%l %f".
 			if [[ -n "${EDITOR_LINENO_FMT:-}" ]]; then
-				local open_cmd="${EDITOR_LINENO_FMT//%f/$file}"
-				open_cmd="${open_cmd//%l/$linenum}"
+				# Escape the %: zsh reads a leading % in a ${var//pat/repl}
+				# pattern as the end-of-string anchor, so %f never matched and
+				# %l matched only a trailing "l". Broken on Linux too — the
+				# README's own `hx %f:%l` example emitted `hx %f:%2`.
+				local open_cmd="${EDITOR_LINENO_FMT//\%f/$file}"
+				open_cmd="${open_cmd//\%l/$linenum}"
 				eval "$open_cmd"
 			elif [[ "${EDITOR:-}" == *code* ]]; then
 				code -g "${file}:${linenum}"

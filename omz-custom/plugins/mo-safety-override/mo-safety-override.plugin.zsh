@@ -14,7 +14,11 @@ _confirm_reboot() {
 	local ans
 	read -r -t 30 ans || { echo "Timed out — reboot cancelled."; return 1; }
 	if [[ "$ans" =~ ^[Yy]([Ee][Ss])?$ ]]; then
-		command reboot "$@"
+		# Linux reboot(8) is a systemd unit that stops services in order;
+		# macOS reboot(8) just SIGTERMs everything, so the graceful
+		# equivalent there is shutdown(8), which notifies loginwindow first.
+		local -a cmd=( ${=$(_mo_reboot_cmd)} )
+		command "${cmd[@]}" "$@"
 	else
 		echo "Reboot cancelled."
 		return 1

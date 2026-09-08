@@ -55,32 +55,34 @@ connected() {
 	local verbose=false
 	[[ "${1:-}" == "-v" || "${1:-}" == "--verbose" ]] && verbose=true
 
-	# who -u cols: user tty date time idle pid (from). Remote SSH logins carry a
-	# source host in parens; local X/console logins show (:0)/(login screen)/none.
-	# Keep only rows whose paren host contains a dot — an IP or FQDN, i.e. remote.
+	# _mo_who_sessions normalises `who -u` to TSV, because the two platforms
+	# disagree on field count: GNU prints one ISO date token ("2026-09-08
+	# 21:38"), BSD prints three ("Sep  8 21:38"), so every column after the
+	# username shifted by one on macOS and this printed the wrong values.
+	#
+	# Remote SSH logins carry a source host; local console/X logins show
+	# (:0)/(login screen)/none. Keep only hosts containing a dot — an IP or
+	# FQDN, i.e. genuinely remote.
 	local rows
-	rows=$(who -u 2>/dev/null | awk '{ h=$NF; if (h ~ /^\(.*\..*\)$/) print }')
+	rows=$(_mo_who_sessions | awk -F'\t' '$6 ~ /\./')
 	if [[ -z "$rows" ]]; then
 		echo "connected: no inbound SSH sessions" >&2
 		return 1
 	fi
 
 	if [[ "$verbose" == false ]]; then
-		echo "$rows" | awk '{ h=$NF; gsub(/[()]/,"",h);
-			printf "%-12s from %-18s %s %s\n", $1, h, $3, $4 }'
+		echo "$rows" | awk -F'\t' '{ printf "%-12s from %-18s %s\n", $1, $6, $3 }'
 		return
 	fi
 
-	command -v ss &>/dev/null || { echo "connected: -v needs ss (try: $(_mo_pkg_hint iproute2))" >&2; return 1; }
-	local user tty date time idle pid host peer
+	local user tty login idle pid host peer
 	{
 		echo "USER TTY FROM PID LOGIN"
-		while read -r user tty date time idle pid host; do
-			host="${host//[()]/}"
-			# Upgrade the bare source IP to IP:port from the matching sshd socket, if visible.
-			peer=$(ss -tnp 2>/dev/null | awk -v ip="$host" '$0 ~ ip && /sshd/ {print $4; exit}')
+		while IFS=$'\t' read -r user tty login idle pid host; do
+			# Upgrade the bare source IP to IP:port from the matching socket.
+			peer=$(_mo_ssh_peer "$host" 2>/dev/null)
 			[[ -n "$peer" ]] && host="$peer"
-			echo "$user $tty $host ${pid:--} $time"
+			echo "$user $tty $host ${pid:--} ${login// /_}"
 		done <<< "$rows"
 	} | column -t
 }

@@ -109,7 +109,11 @@ __set_ssh_connection_count_content()
 	local -a remote_addrs=()
 	local line
 	while IFS= read -r line; do
-		[[ "$line" == *pts* ]] || continue
+		# Not a tty-name test: Linux names remote ttys pts/N, macOS names them
+		# ttysNNN, and any future platform will pick its own. The
+		# parenthesised source address on the next line is what actually
+		# identifies a remote session, and it is the same on both.
+		[[ "$line" == *pts* || "$line" == *ttys* ]] || continue
 		local addr="${line##* }"
 		[[ "$addr" == \(* && "$addr" == *\) ]] && remote_addrs+=( "$addr" )
 	done < <(who)

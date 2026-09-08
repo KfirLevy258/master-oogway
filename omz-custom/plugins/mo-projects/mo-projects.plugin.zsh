@@ -6,11 +6,14 @@ _mo_projects_dir() {
 		echo "$MO_PROJECTS_PROJ_DIR"
 		return
 	fi
-	if [[ -d "$HOME/projects" ]]; then
-		echo "$HOME/projects"
-	elif [[ -d "$HOME/Projects" ]]; then
-		echo "$HOME/Projects"
-	fi
+	# Test the capitalised name first and canonicalise the result: APFS is
+	# case-insensitive by default, so -d "$HOME/projects" is true even when
+	# the directory is really ~/Projects, and every alias then carried a path
+	# that does not literally exist.
+	local d
+	for d in "$HOME/Projects" "$HOME/projects"; do
+		[[ -d "$d" ]] && { echo "${d:A}"; return }
+	done
 }
 
 _mo_projects_register_aliases() {
@@ -22,6 +25,12 @@ _mo_projects_register_aliases() {
 	for name in "$proj_dir"/*(#qN/); do
 		name="${name:t}"
 		[[ "$name" != *=* ]] || continue
+		# The README promises collisions are "silently skipped — no
+		# clobbering", but nothing implemented it: a project directory named
+		# cd, ls or grep shadowed the real command for the whole session.
+		(( ${+commands[$name]} || ${+functions[$name]} \
+		   || ${+aliases[$name]} || ${+builtins[$name]} \
+		   || ${+reswords[(r)$name]} )) && continue
 		alias -- "$name"="cd ${(q)proj_dir}/${(q)name}"
 	done
 }

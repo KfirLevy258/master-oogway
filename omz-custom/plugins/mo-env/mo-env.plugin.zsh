@@ -43,12 +43,23 @@ fenv() {
 		read -r new_value
 	elif [[ "$mode" == "editor" ]]; then
 		local tmpfile tmpdir
-		# XDG_RUNTIME_DIR is a per-user tmpfs cleared on logout — safer than /tmp
+		# A per-user runtime dir, not /tmp: XDG_RUNTIME_DIR on Linux, TMPDIR
+		# (0700, under /var/folders) on macOS. Reading XDG_RUNTIME_DIR
+		# directly fell through to /tmp on macOS — the exact thing this
+		# comment says to avoid.
 		# for secrets. Fall back to /tmp if unset (non-systemd environments).
-		tmpdir="${XDG_RUNTIME_DIR:-/tmp}"
+		tmpdir="$(_mo_runtime_dir)"
 		tmpfile=$(mktemp -p "$tmpdir")
 		print -r -- "$var_value" > "$tmpfile"
-		${EDITOR:-vim} "$tmpfile"
+		# Split on words: zsh does not word-split an unquoted parameter, so
+		# EDITOR="code -w" was looked up as one command name, the edit never
+		# happened, and the OLD value was exported with status 0.
+		local -a _ed=( ${(z)${EDITOR:-vim}} )
+		"${_ed[@]}" "$tmpfile" || {
+			echo "fenv: editor failed: ${_ed[*]}" >&2
+			command rm -f "$tmpfile"
+			return 1
+		}
 		new_value=$(command cat "$tmpfile")
 		# `command rm` so a secrets temp file is really deleted, not sent to a
 		# trash can by the `rm` alias mo-trash installs.
