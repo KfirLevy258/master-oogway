@@ -1,6 +1,23 @@
 
 _MO_INSTALL_DIR="${HOME}/.master-oogway"
 
+# True when git's configured diff.tool will actually show a diff here.
+# git's default on macOS is opendiff, which is a GUI (FileMerge) and needs full
+# Xcode — so "diff.tool is set" was not the right question: it turned
+# `diff-zshrc` into an app launch, or a "Launch 'opendiff' [Y/n]?" prompt with
+# exit 1 when nothing was there to answer it.
+_mo_cli_difftool_usable() {
+	local tool="$1"
+	[[ -n "$tool" ]] || return 1
+	case "$tool" in
+		# Known GUI tools: fine when a human is watching, wrong for a command
+		# whose whole job is to print a diff into the terminal.
+		opendiff|kaleidoscope|araxis|bc|bc3|diffmerge|ecmerge|p4merge|smerge|meld|kdiff3|tkdiff|winmerge|vscode|code)
+			return 1 ;;
+	esac
+	command -v "$tool" &>/dev/null
+}
+
 _mo_version() {
 	if git -C "$_MO_INSTALL_DIR" rev-parse --git-dir &>/dev/null; then
 		git -C "$_MO_INSTALL_DIR" log -1 \
@@ -157,8 +174,9 @@ master-oogway() {
 			if [[ -n "$tool" ]]; then
 				# ${=tool} splits on whitespace so 'code --diff' works.
 				${=tool} "$snapshot" "$zshrc"
-			elif command -v git &>/dev/null && [[ -n "$(git config --get diff.tool 2>/dev/null)" ]]; then
-				git difftool --no-index "$snapshot" "$zshrc"
+			elif command -v git &>/dev/null \
+			     && _mo_cli_difftool_usable "$(git config --get diff.tool 2>/dev/null)"; then
+				git difftool --no-index --no-prompt "$snapshot" "$zshrc"
 			else
 				diff -u "$snapshot" "$zshrc"
 			fi

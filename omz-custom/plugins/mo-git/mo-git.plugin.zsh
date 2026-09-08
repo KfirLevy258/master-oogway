@@ -6,11 +6,34 @@ alias gaa="git add --all"
 alias gac="git add ."
 alias gs="git status"
 gd() {
-	if git config --get diff.tool &>/dev/null; then
+	# Gate on whether the tool can actually run, not on whether one is
+	# configured. Two ways that bit on macOS, both ending in an empty diff and
+	# exit 0: `opendiff` is git's default there but needs full Xcode (Command
+	# Line Tools alone gives "tool 'opendiff' requires Xcode"), and this
+	# project's own gitconfig sets meld, which has no macOS build by default.
+	local tool
+	tool=$(git config --get diff.tool 2>/dev/null)
+	if [[ -n "$tool" ]] && _mo_git_difftool_usable "$tool"; then
 		git difftool -y "$@"
 	else
 		git diff "$@"
 	fi
+}
+
+_mo_git_difftool_usable() {
+	local tool="$1" cmd
+	# A custom cmd wins over the tool name.
+	cmd=$(git config --get "difftool.${tool}.cmd" 2>/dev/null)
+	[[ -n "$cmd" ]] && tool="${${(z)cmd}[1]}"
+	command -v "$tool" &>/dev/null || return 1
+	# opendiff exists as an xcrun shim even without Xcode, and only fails when
+	# invoked; ask xcode-select instead of trusting the shim.
+	if [[ "$tool" == opendiff ]]; then
+		local dev
+		dev=$(xcode-select -p 2>/dev/null) || return 1
+		[[ -d "${dev}/Applications" || "$dev" == *Xcode.app* ]] || return 1
+	fi
+	return 0
 }
 alias gds="gd --staged"
 alias glc="git log --graph --pretty='%C(yellow)%h%Creset -%C(auto)%d%Creset %C(auto)%s %C(green)(%ad) %C(bold blue)[%an]%Creset' --date=short"

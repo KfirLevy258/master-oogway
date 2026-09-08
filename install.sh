@@ -37,6 +37,22 @@ esac
 
 _mo_is_macos() { [[ "$MO_PLATFORM" == macos ]]; }
 
+# Mirrors of the two lib/platform.zsh primitives this script needs. It runs
+# under bash before any zsh is sourced, so it cannot call them directly.
+# GNU stat takes -c %a, BSD stat takes -f %OLp; GNU sed refuses an argument to
+# -i, BSD sed requires one.
+_mo_stat_mode() {
+	if _mo_is_macos; then stat -f '%OLp' "$1" 2>/dev/null
+	else                  stat -c '%a'   "$1" 2>/dev/null
+	fi
+}
+
+_mo_sed_inplace() {
+	if _mo_is_macos; then sed -i '' "$1" "$2"
+	else                  sed -i    "$1" "$2"
+	fi
+}
+
 # Debian package name -> Homebrew equivalent, where they differ. A case rather
 # than an associative array: macOS ships bash 3.2, which has none.
 _mo_brew_formula() {
@@ -208,8 +224,12 @@ _find_backup() {
 	local -a backups=( "${base}".[0-9]* )
 	$_had_nullglob || shopt -u nullglob
 
+	# "${backups[@]}" on an empty array is an unbound-variable error under
+	# `set -u` in the bash 3.2 macOS ships (bash 4.4+ made it safe). Without
+	# the guard this aborted on the FIRST dotfile, so --uninstall reversed
+	# nothing at all. Same idiom as the MO_ORIG_ARGS site below.
 	local newest="" candidate
-	for candidate in "${backups[@]}"; do
+	for candidate in ${backups[@]+"${backups[@]}"}; do
 		[[ -f "$candidate" ]] || continue
 		[[ -z "$newest" || "$candidate" > "$newest" ]] && newest="$candidate"
 	done
@@ -548,7 +568,9 @@ if _running_via_pipe || { ! _running_from_install_dir && ! _running_from_master_
 	fi
 	# Already pulled + submodule-updated above; tell the re-exec'd update-mode
 	# to skip its redundant pull (avoids the double "Updating" + double fetch).
-	MO_SKIP_PULL=1 exec bash "${INSTALL_DIR}/install.sh" "${MO_ORIG_ARGS[@]}"
+	# Same bash 3.2 empty-array guard: a curl-pipe install passes no flags, so
+	# this expansion was fatal on a stock macOS before the shell even started.
+	MO_SKIP_PULL=1 exec bash "${INSTALL_DIR}/install.sh" ${MO_ORIG_ARGS[@]+"${MO_ORIG_ARGS[@]}"}
 fi
 
 # -- Plugin submodule self-healing ----------------------------------------------
@@ -736,7 +758,7 @@ if [[ "$MO_UNINSTALL" == true ]]; then
 		success "Removed lan-scan crontab line"
 	fi
 	if grep -qF "# BEGIN master-oogway:sendenv" "${HOME}/.ssh/config" 2>/dev/null; then
-		sed -i '/# BEGIN master-oogway:sendenv/,/# END master-oogway:sendenv/d' "${HOME}/.ssh/config"
+		_mo_sed_inplace '/# BEGIN master-oogway:sendenv/,/# END master-oogway:sendenv/d' "${HOME}/.ssh/config"
 		success "Removed SendEnv stanza from ~/.ssh/config"
 	fi
 	if [[ -f /etc/ssh/sshd_config.d/99-master-oogway-acceptenv.conf ]]; then
@@ -994,7 +1016,12 @@ _install_gitconfig()
 	elif [[ -s "${GITCONFIG_REAL}" ]]; then
 		local tmp
 		tmp=$(mktemp "${GITCONFIG_REAL}.XXXXXX")
-		chmod --reference="${GITCONFIG_REAL}" "${tmp}"
+		# chmod --reference is GNU-only; macOS errors "illegal option -- -"
+		# and the ERR trap then kills an upgrade install. Fresh installs never
+		# reached this branch, which is why it went unnoticed.
+		local _mode
+		_mode=$(_mo_stat_mode "${GITCONFIG_REAL}")
+		[[ -n "${_mode}" ]] && chmod "${_mode}" "${tmp}"
 		{
 			printf '[include]\n\tpath = ~/.gitconfig.master-oogway\n\n'
 			cat "${GITCONFIG_REAL}"
