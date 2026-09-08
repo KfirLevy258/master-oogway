@@ -20,9 +20,14 @@ _mo_pick_read_key() {
 		stty -echo -icanon -isig min 1 time 0 2>/dev/null
 		read -k1 key
 		if [[ "$key" == $'\e' ]]; then
-			stty min 0 time 1 2>/dev/null
+			# zsh's own timeout, not `stty min 0 time 1`: `read -k` calls the
+			# shell's setcbreak(), which unconditionally re-applies VMIN=1
+			# VTIME=0 from its saved tty state and so undoes the stty on the
+			# line before. A bare Esc therefore blocked until some other key
+			# arrived — with -isig still in force, so Ctrl+C could not break
+			# out either. Affects Linux identically; it is zsh's utils.c.
 			c2=''
-			read -k1 c2 2>/dev/null || c2=''
+			read -t 0.05 -k1 c2 2>/dev/null || c2=''
 			if [[ -z "$c2" ]]; then
 				REPLY=esc
 			elif [[ "$c2" == '[' || "$c2" == 'O' ]]; then

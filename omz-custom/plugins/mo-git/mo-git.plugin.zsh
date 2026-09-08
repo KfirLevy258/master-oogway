@@ -99,6 +99,9 @@ gsum() {
 	printf '%s\n' "${status_lines[@]}" | head -20
 	(( stashes   > 0 )) && echo "stashes: $stashes"
 	(( untracked > 0 )) && echo "untracked: $untracked file(s)"
+	# Explicit: the test above was the function's last statement, so a clean
+	# repo returned 1 and any `gsum && ...` chain silently broke.
+	return 0
 }
 
 gtag() {
@@ -174,6 +177,9 @@ flog() {
 		return
 	fi
 	command -v fzf &>/dev/null || { echo "flog: fzf not installed" >&2; return 1; }
+	# gtag and fbranch both check this; flog did not, so outside a repo it
+	# picked from empty input and returned 0 with no output at all.
+	git rev-parse --git-dir &>/dev/null || { echo "flog: not a git repo" >&2; return 1; }
 	local hash
 	hash=$(git log --oneline --color=always 2>/dev/null \
 		| fzf --ansi --height=60% --reverse \

@@ -71,7 +71,11 @@ _mo_extract_zip() {
 	# interactive "replace ...? [y]es,[n]o,[A]ll" prompt that nothing answers.
 	local -a policy=()
 	[[ -n "$force_merge" ]] && policy=(-o)
-	unzip "${policy[@]}" -K -d "$outdir" "$f"
+	# No -K. It means "keep setuid/setgid/sticky bits from the archive", which
+	# is the opposite of what the rest of this function is for: everything
+	# above exists to make extracting an untrusted zip safe. Dropping it lets
+	# the umask apply, as it already does for tar via _mo_untar.
+	unzip "${policy[@]}" -d "$outdir" "$f"
 }
 
 extract() {
