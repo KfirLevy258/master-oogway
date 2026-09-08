@@ -65,6 +65,17 @@ setopt ALWAYS_TO_END     # after completing, jump cursor to end of word
 # -- optional dependency map ----------------------------------------------------
 # Detects optional tools once via zsh's $commands hash (no forks) and caches
 
+# -- shared libs ----------------------------------------------------------------
+# Sourced explicitly: oh-my-zsh reads $ZSH_CUSTOM/lib/<name>.zsh only as an
+# override of a same-named file in its own lib/, so a lib with a new name is
+# never picked up. lib/colors.zsh happened to work because dragon.zsh sources
+# it directly; lib/clip.zsh had no such line, so _mo_clip was undefined and
+# clip, fp and flog silently fell back to printing instead of copying.
+for __mo_lib in "$ZSH_CUSTOM/lib/"*.zsh(#qN); do
+    source "$__mo_lib" || print -P "%F{yellow}[master-oogway]%f failed to source ${__mo_lib}" >&2
+done
+unset __mo_lib
+
 # -- dragon theme config --------------------------------------------------------
 # Sourced before oh-my-zsh so your overrides win over theme defaults.
 # Edit with: dragon-configure
