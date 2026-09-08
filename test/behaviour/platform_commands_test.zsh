@@ -133,3 +133,31 @@ if _mo_is_macos; then
 	assert_not_contains "$(_mo_pkg_hint unrar)" "brew install unrar" \
 		"the removed unrar formula is not suggested"
 fi
+
+# ── color pick owns the tty for the whole session ────────────────────────────
+# Structural, not behavioural: exercising the picker needs a real pty and
+# keystroke timing, which the unit suite has no way to provide. The behaviour
+# was verified by hand — sending Ctrl+C after navigating returns 130 with this
+# structure and kills the shell with the old one — and these assertions pin the
+# structure that makes it true.
+#
+# The bug: raw mode was set and restored around every single keystroke, so ISIG
+# was re-enabled between reads. A Ctrl+C landing in that window arrived as a
+# real SIGINT instead of the \x03 the reader turns into "cancel".
+local _pick="$MO_ROOT/omz-custom/plugins/mo-color/_mo_color_pick.zsh"
+if [[ -r "$_pick" ]]; then
+	local _reader
+	_reader=$(awk '/^_mo_pick_read_key\(\)/,/^}$/' "$_pick")
+	assert_not_contains "$_reader" "stty -echo" \
+		"the key reader does not set raw mode per keystroke"
+	assert_not_contains "$_reader" 'stty "$stty_save"' \
+		"the key reader does not restore the tty per keystroke"
+	assert_contains "$(<$_pick)" 'trap '\''stty "$_mo_pick_stty"' \
+		"the picker restores the tty from its trap"
+	assert_eq "1" "$(command grep -c 'stty -echo -icanon -isig' "$_pick")" \
+		"raw mode is set exactly once, around the whole loop"
+	# The Esc timeout must stay zsh's own: `read -k` re-applies VMIN/VTIME from
+	# the shell's saved state, so an stty-based timeout is silently undone.
+	assert_contains "$(<$_pick)" 'read -t 0.05 -k1' \
+		"Esc disambiguation uses zsh's read timeout, not stty"
+fi
