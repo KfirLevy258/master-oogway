@@ -66,14 +66,19 @@ _mo_welcome_field_mem() {
 }
 
 _mo_welcome_field_disk() {
-	local pct color
-	pct=$(df -P / 2>/dev/null | awk 'NR==2{gsub(/%/,"",$5); print $5}')
+	# _mo_disk_pct, not `df -P /`: on macOS / is the sealed, read-only system
+	# snapshot, which sits at a couple of percent no matter how full the disk
+	# is — so this under-reported badly and the thresholds below could never
+	# fire. The writable volume is /System/Volumes/Data.
+	local pct color mount=/
+	pct=$(_mo_disk_pct)
 	[[ -n "$pct" ]] || return 0
+	_mo_is_macos && [[ -d /System/Volumes/Data ]] && mount="/System/Volumes/Data"
 	if   (( pct >= 90 )); then color=red
 	elif (( pct >= 70 )); then color=yellow
 	else                       color=green
 	fi
-	print -P "  %F{245}disk%f   %F{${color}}/ at ${pct}%%%f"
+	print -P "  %F{245}disk%f   %F{${color}}${mount} at ${pct}%%%f"
 }
 
 _mo_welcome_field_tmux() {
