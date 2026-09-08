@@ -30,7 +30,27 @@ assert_match "$(_mo_kernel)" '^[0-9]+\.' "kernel looks like a version"
 
 # -- dates ----------------------------------------------------------------------
 assert_eq "2023-11-14 22:13:20" "$(_mo_epoch_to_date 1700000000 --utc)" "epoch_to_date UTC"
-assert_eq 1700000000 "$(_mo_date_to_epoch '2023-11-14 22:13:20')" "date_to_epoch roundtrip"
+
+# Pin TZ: without it these assert whatever the tester's clock says, and the
+# earlier hardcoded 1700000000 quietly encoded the UTC reading of a local-time
+# string — it passed on macOS only because the implementation had the same bug,
+# and would have failed on Linux by exactly the UTC offset.
+(
+	export TZ=Asia/Jerusalem   # UTC+2 in November, so the two readings differ
+	assert_eq 1700000000 "$(_mo_date_to_epoch '2023-11-14 22:13:20' --utc)" \
+		"date_to_epoch reads --utc as UTC"
+	assert_eq 1699992800 "$(_mo_date_to_epoch '2023-11-14 22:13:20')" \
+		"date_to_epoch reads a bare datetime as local time"
+	assert_eq 1700000000 "$(_mo_date_to_epoch "$(_mo_epoch_to_date 1700000000 --utc)" --utc)" \
+		"epoch -> date -> epoch round-trips in UTC"
+)
+
+# Relative expressions: GNU date parses them natively, BSD date needs the
+# translation table in _mo_relative_to_epoch.
+assert_match "$(_mo_relative_to_epoch yesterday)" '^[0-9]+$' "relative: yesterday parses"
+assert_true "relative: yesterday is in the past" \
+	"$(_mo_relative_to_epoch yesterday) < $(date +%s)"
+assert_fail "relative: gibberish is rejected" _mo_relative_to_epoch 'not a date' 
 
 # -- clipboard ------------------------------------------------------------------
 _mo_clip "mo-clip-test-$$"

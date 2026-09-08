@@ -79,11 +79,45 @@ _mo_epoch_to_date() {
 # Returns 1 when the input cannot be parsed, so callers can report it.
 _mo_date_to_epoch() {
 	local input="$1"; shift
+	local -a flags=()
+	[[ "${1:-}" == "--utc" ]] && flags=(-u)
 	if _mo_is_macos; then
-		date -u -j -f '%Y-%m-%d %H:%M:%S' "$input" '+%s' 2>/dev/null
+		# -j parses without setting the clock; -f gives the input format. Without
+		# -u this reads the string in local time, which is what `date -d` does.
+		date $flags -j -f '%Y-%m-%d %H:%M:%S' "$input" '+%s' 2>/dev/null \
+			|| date $flags -j -f '%Y-%m-%d' "$input" '+%s' 2>/dev/null
 	else
-		date -d "$input" '+%s' 2>/dev/null
+		date $flags -d "$input" '+%s' 2>/dev/null
 	fi
+}
+
+# Relative expressions GNU date parses natively. BSD date has no such grammar,
+# but -v adjusts a field at a time, which covers the idioms the help advertises.
+# Returns 1 when the expression is not one we can translate.
+_mo_relative_to_epoch() {
+	local expr="${(L)1}"
+	if ! _mo_is_macos; then
+		date -d "$expr" '+%s' 2>/dev/null
+		return
+	fi
+	# GNU date is available on macOS as gdate when coreutils is installed; it
+	# parses everything, so prefer it over our translation table.
+	if command -v gdate &>/dev/null; then
+		gdate -d "$expr" '+%s' 2>/dev/null && return
+	fi
+	local -a adj=()
+	case "$expr" in
+		now|today)      adj=() ;;
+		yesterday)      adj=(-v-1d -v0H -v0M -v0S) ;;
+		tomorrow)       adj=(-v+1d -v0H -v0M -v0S) ;;
+		"last "[a-z]##) adj=(-v-${expr#last }  -v0H -v0M -v0S) ;;
+		"next "[a-z]##) adj=(-v+${expr#next }  -v0H -v0M -v0S) ;;
+		<->" days ago")   adj=(-v-${expr%% *}d) ;;
+		<->" weeks ago")  adj=(-v-${expr%% *}w) ;;
+		<->" months ago") adj=(-v-${expr%% *}m) ;;
+		*) return 1 ;;
+	esac
+	date "${adj[@]}" '+%s' 2>/dev/null
 }
 
 # True when the platform's date can parse free-form input like "yesterday".
@@ -237,6 +271,12 @@ _mo_local_ip() {
 			[[ -n "$iface" ]] || continue
 			ip=$(ipconfig getifaddr "$iface" 2>/dev/null) && [[ -n "$ip" ]] && { print -- "$ip"; return 0 }
 		done
+		# ipconfig only answers for DHCP-configured interfaces, so a static
+		# address or a VPN tunnel falls through to here — the same second tier
+		# the Linux branch has.
+		ip=$(ifconfig 2>/dev/null \
+			| awk '/inet /{if ($2 != "127.0.0.1") {print $2; exit}}')
+		[[ -n "$ip" ]] && { print -- "$ip"; return 0 }
 	else
 		ip=$(ip -4 route get 1.1.1.1 2>/dev/null \
 			| awk '/src/{for(i=1;i<=NF;i++) if($i=="src") {print $(i+1); exit}}')
@@ -245,6 +285,135 @@ _mo_local_ip() {
 		[[ -n "$ip" ]] && print -- "$ip"
 	fi
 	return 0
+}
+
+# The CIDR of the default route's network, e.g. 192.168.1.0/24. Used to scan
+# the LAN. Linux reads it from `ip route`; macOS resolves the default interface
+# and converts its hex netmask.
+_mo_default_subnet_cidr() {
+	if ! _mo_is_macos; then
+		ip -o -f inet addr show 2>/dev/null | awk '
+			$4 !~ /^127\./ {print $4; exit}'
+		return
+	fi
+	local iface addr mask
+	iface=$(route -n get default 2>/dev/null | awk '/interface:/{print $2}')
+	[[ -n "$iface" ]] || return 1
+	read -r addr mask <<< "$(ifconfig "$iface" 2>/dev/null \
+		| awk '/inet /{print $2, $4; exit}')"
+	[[ -n "$addr" && -n "$mask" ]] || return 1
+	# ifconfig prints the mask as 0xffffff00; count its bits for the prefix and
+	# AND it with the address for the network.
+	local -i m=$(( ${mask} )) prefix=0 i
+	for (( i = 31; i >= 0; i-- )); do
+		if (( (m >> i) & 1 )); then
+			(( prefix += 1 ))
+		else
+			break
+		fi
+	done
+	local -a oct=( ${(s:.:)addr} )
+	local -i a=$(( (oct[1] << 24) | (oct[2] << 16) | (oct[3] << 8) | oct[4] ))
+	local -i net=$(( a & m ))
+	print -- "$(( (net >> 24) & 255 )).$(( (net >> 16) & 255 )).$(( (net >> 8) & 255 )).$(( net & 255 ))/$prefix"
+}
+
+# "IP:port" of an established inbound connection from <ip>, or nothing.
+# Linux has `ss -tnp`; macOS has neither ss nor any iproute2 port, so netstat
+# supplies the same answer without needing root.
+_mo_ssh_peer() {
+	local ip="$1"
+	[[ -n "$ip" ]] || return 1
+	if _mo_is_macos; then
+		netstat -an -p tcp 2>/dev/null | awk -v ip="$ip" '
+			$NF == "ESTABLISHED" && index($5, ip) == 1 {
+				# netstat writes 192.168.1.9.51234 — the port is the last field.
+				n = split($5, a, ".")
+				port = a[n]
+				sub(/\.[0-9]+$/, "", $5)
+				print $5 ":" port
+				exit
+			}'
+	else
+		ss -tnp 2>/dev/null \
+			| awk -v ip="$ip" '$0 ~ ip && /sshd/ {print $4; exit}'
+	fi
+}
+
+# Logged-in sessions as TSV: user, tty, login-time, idle, pid, host.
+# `who -u` differs by exactly one field between the platforms (GNU prints one
+# ISO date token, BSD prints "Sep  8"), so parse from the right, where both
+# agree, rather than from the left.
+_mo_who_sessions() {
+	who -u 2>/dev/null | awk '
+		NF >= 5 {
+			host = ""
+			last = NF
+			if ($NF ~ /^\(.*\)$/) { host = substr($NF, 2, length($NF) - 2); last = NF - 1 }
+			pid  = $last
+			idle = $(last - 1)
+			login = ""
+			for (i = 3; i <= last - 2; i++) login = login (login == "" ? "" : " ") $i
+			printf "%s\t%s\t%s\t%s\t%s\t%s\n", $1, $2, login, idle, pid, host
+		}'
+}
+
+# A per-user directory for short-lived secrets. Linux has XDG_RUNTIME_DIR (a
+# tmpfs cleared at logout); macOS's exact analogue is TMPDIR, a per-user 0700
+# directory under /var/folders. Never plain /tmp when either exists.
+_mo_runtime_dir() {
+	if _mo_is_macos; then
+		print -- "${TMPDIR:-/tmp}"
+	else
+		print -- "${XDG_RUNTIME_DIR:-/tmp}"
+	fi
+}
+
+# True when a font family is installed. macOS has no fontconfig, so fc-list is
+# not merely missing output — it cannot answer, and treating its absence as
+# "font missing" produces an unconditional false warning.
+_mo_font_installed() {
+	local family="$1"
+	if _mo_is_macos; then
+		local -a hits=(
+			/System/Library/Fonts/**/${~family//[ ]/}*(#qN.)
+			/Library/Fonts/**/${~family//[ ]/}*(#qN.)
+			${HOME}/Library/Fonts/**/${~family//[ ]/}*(#qN.)
+		)
+		(( ${#hits} > 0 ))
+	else
+		command -v fc-list &>/dev/null || return 1
+		fc-list "$family" 2>/dev/null | command grep -qi "${family%% *}"
+	fi
+}
+
+# Percent-used of the filesystem holding the user's data. On macOS `/` is the
+# sealed, read-only system snapshot — always a couple of percent, so the
+# thresholds never fire; the writable volume is /System/Volumes/Data.
+_mo_disk_pct() {
+	local target=/
+	_mo_is_macos && [[ -d /System/Volumes/Data ]] && target=/System/Volumes/Data
+	df -P "$target" 2>/dev/null | awk 'NR==2 {gsub(/%/,"",$5); print $5}'
+}
+
+# Octal mode of a file. GNU stat uses -c %a; BSD stat uses -f %OLp.
+_mo_stat_mode() {
+	if _mo_is_macos; then
+		stat -f '%OLp' "$1" 2>/dev/null
+	else
+		stat -c '%a' "$1" 2>/dev/null
+	fi
+}
+
+# The graceful restart command. Linux's reboot is a systemd unit that shuts
+# services down in order; macOS reboot(8) just SIGTERMs everything, so the
+# equivalent is shutdown(8), which notifies loginwindow first.
+_mo_reboot_cmd() {
+	if _mo_is_macos; then
+		print -- "shutdown -r now"
+	else
+		print -- "reboot"
+	fi
 }
 
 # -- file editing ---------------------------------------------------------------
@@ -259,17 +428,32 @@ _mo_sed_inplace() {
 }
 
 # -- archives -------------------------------------------------------------------
-# GNU tar is hardened with flags bsdtar does not have; bsdtar already declines
-# to restore owner and permissions for a non-root user, and autodetects
-# compression, so the caller never passes -z/-j/-J.
+# bsdtar accepts --no-same-owner and --no-same-permissions; only GNU's
+# --no-overwrite-dir has no bsdtar equivalent (it errors "Option ... is not
+# supported"). bsdtar also autodetects compression, so no caller passes -z/-j/-J.
 _mo_untar() {
 	local archive="$1" dest="${2:-.}"
 	mkdir -p "$dest"
 	if _mo_is_macos; then
-		tar -xf "$archive" -C "$dest"
+		tar -xf "$archive" -C "$dest" --no-same-owner --no-same-permissions
 	else
 		tar -xf "$archive" -C "$dest" \
 			--no-overwrite-dir --no-same-owner --no-same-permissions
+	fi
+}
+
+# GNU `cat -A` is shorthand for -vET. BSD cat spells the same thing -vet and
+# rejects -A outright, so translate rather than pass it through.
+_mo_cat_raw() {
+	if _mo_is_macos; then
+		local -a args=(); local a
+		for a in "$@"; do
+			[[ "$a" == -[a-zA-Z]#A[a-zA-Z]# ]] && a="${a//A/vet}"
+			args+=("$a")
+		done
+		command cat "${args[@]}"
+	else
+		command cat "$@"
 	fi
 }
 
@@ -278,19 +462,40 @@ _mo_pkg_manager() { _mo_is_macos && print -- brew || print -- apt }
 
 # Debian package names that differ on Homebrew, or that have no brew formula
 # because macOS already ships the tool.
+# @builtin  — macOS ships this exact tool; suggesting an install is wrong.
+# @none:MSG — macOS solves the same problem with a different tool, so neither
+#             the Debian name nor any formula is the right advice. Saying
+#             "ships with macOS — check your PATH" for these was a lie: no
+#             amount of PATH hunting finds xclip or ip(8) on a Mac.
 typeset -gA _MO_PKG_MACOS=(
 	[build-essential]="@xcode"      [texlive-xetex]="--cask basictex"
-	[trash-cli]="trash"             [fd-find]="fd"
-	[p7zip-full]="sevenzip"         [xz-utils]="xz"
-	[wl-clipboard]="@builtin"       [xclip]="@builtin"
-	[procps]="@builtin"             [iproute2]="@builtin"
-	[xdg-utils]="@builtin"          [bc]="@builtin"
+	[fd-find]="fd"                  [xz-utils]="xz"
+	[p7zip-full]="sevenzip"         [meld]="--cask meld"
+	[unrar]="unar"
+
+	# Ship with macOS.
+	[procps]="@builtin"             [trash-cli]="@none:macOS ships /usr/bin/trash — no install needed"
+	[bc]="@builtin"                 [coreutils]="@builtin"
+	[tar]="@builtin"                [unzip]="@builtin"
+	[zip]="@builtin"                [gzip]="@builtin"
+	[bzip2]="@builtin"              [git]="@builtin"
+	[less]="@builtin"               [curl]="@builtin"
+
+	# Solved differently on macOS.
+	[wl-clipboard]="@none:macOS uses pbcopy/pbpaste — no install needed"
+	[xclip]="@none:macOS uses pbcopy/pbpaste — no install needed"
+	[xsel]="@none:macOS uses pbcopy/pbpaste — no install needed"
+	[xdg-utils]="@none:macOS uses open(1) — no install needed"
+	[iproute2]="@none:macOS has no ip(8); ifconfig and netstat cover it"
 )
 
 # Install hint for one or more packages, phrased for the current platform:
 #   Linux  → "sudo apt install fzf"
 #   macOS  → "brew install fzf"
 # Packages macOS already provides say so instead of suggesting a bad install.
+# Formulae and casks cannot share one brew invocation, and a note about a
+# built-in is not a command, so the three are emitted separately. Earlier this
+# returned on the first non-formula, silently dropping every package after it.
 _mo_pkg_hint() {
 	if ! _mo_is_macos; then
 		print -- "sudo apt install $*"
@@ -298,16 +503,26 @@ _mo_pkg_hint() {
 	fi
 
 	local pkg mapped
-	local -a formulae=()
+	local -a formulae=() casks=() notes=() parts=()
 	for pkg in "$@"; do
 		mapped="${_MO_PKG_MACOS[$pkg]:-$pkg}"
 		case "$mapped" in
-			@xcode)   print -- "xcode-select --install"; return ;;
-			@builtin) print -- "${pkg} ships with macOS — check your PATH"; return ;;
-			*)        formulae+=("$mapped") ;;
+			@xcode)    notes+=("xcode-select --install") ;;
+			@builtin)  notes+=("${pkg} ships with macOS — check your PATH") ;;
+			@none:*)   notes+=("${mapped#@none:}") ;;
+			"--cask "*) casks+=("${mapped#--cask }") ;;
+			*)         formulae+=("$mapped") ;;
 		esac
 	done
-	print -- "brew install ${formulae[*]}"
+
+	(( ${#formulae} )) && parts+=("brew install ${formulae[*]}")
+	(( ${#casks}    )) && parts+=("brew install --cask ${casks[*]}")
+	local out="${(j: && :)parts}"
+	if (( ${#notes} )); then
+		[[ -n "$out" ]] && out+="; "
+		out+="${(j:; :)notes}"
+	fi
+	print -- "$out"
 }
 
 _mo_brew_prefix() {
@@ -345,15 +560,58 @@ _mo_trash_dir() {
 	fi
 }
 
-# Move paths to the trash. Returns non-zero if any move failed.
+# Move paths to the trash, printing "<original>\t<landed basename>" per file so
+# a caller can index them. Returns non-zero if any move failed.
+#
+# The landed name is read from the tool, never guessed: /usr/bin/trash renames
+# on collision ("notes.txt" -> "notes.txt 00-32-27-841.txt"), and an index built
+# from the source basename would then point at somebody else's file — restoring
+# it would overwrite the wrong path.
 _mo_trash_put() {
 	local tool
 	tool=$(_mo_trash_tool) || return 1
 	[[ -n "$tool" ]] || return 1
-	command "$tool" "$@"
+
+	if ! _mo_is_macos; then
+		command "$tool" "$@" || return 1
+		local f
+		for f in "$@"; do print -- "${f:A}\t${f:t}"; done
+		return 0
+	fi
+
+	# trash -v reports:  # Moved "<src>" to "<dest>"
+	local -a srcs=()
+	local f
+	for f in "$@"; do srcs+=("${f:A}"); done
+
+	local out rc=0
+	out=$(command "$tool" -v "$@" 2>&1) || rc=$?
+	(( rc == 0 )) || { print -r -- "$out" >&2; return $rc }
+
+	print -r -- "$out" | awk '
+		/^# Moved / {
+			if (match($0, /" to "/)) {
+				src  = substr($0, 10, RSTART - 10)
+				dest = substr($0, RSTART + 6)
+				sub(/"$/, "", dest)
+				n = split(dest, parts, "/")
+				printf "%s\t%s\n", src, parts[n]
+			}
+		}'
 }
 
 # True when the platform's trash tool can list and restore by original path.
 # trash-cli can; macOS's trash cannot, so mo-trash keeps its own index.
 _mo_trash_has_restore() { _mo_is_linux }
+
+# True when the trash directory can be enumerated. macOS protects ~/.Trash with
+# TCC: readdir fails with EPERM unless the terminal has Full Disk Access, while
+# opening a known path inside it still works. Without this check a directory
+# scan looks like an empty trash, so "nothing to prune" and "trash is empty" get
+# reported as success on a trash that is full.
+_mo_trash_dir_readable() {
+	local dir="${1:-$(_mo_trash_dir)}"
+	[[ -d "$dir" ]] || return 1
+	command ls "$dir" >/dev/null 2>&1
+}
 

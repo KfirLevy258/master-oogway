@@ -20,7 +20,9 @@ if [[ -n "$_MO_BAT_CMD" ]]; then
 	cat() {
 		local arg
 		for arg in "$@"; do
-			[[ "$arg" == -*[Avet]* ]] && { command cat "$@"; return; }
+			# _mo_cat_raw, not `command cat`: BSD cat has no -A (it spells
+			# the same thing -vet) and errors out on it.
+			[[ "$arg" == -*[Avet]* ]] && { _mo_cat_raw "$@"; return; }
 		done
 		command "$_MO_BAT_CMD" --paging never --style=plain "$@"
 	}

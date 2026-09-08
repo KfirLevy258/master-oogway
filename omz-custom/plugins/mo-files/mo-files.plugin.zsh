@@ -14,6 +14,30 @@ typeset -gA _MO_EXTRACT_HINTS=(
 	[zstd]="zstd"
 )
 
+# The 7-Zip CLI is named 7zz by Homebrew's sevenzip, 7z by Debian's p7zip-full,
+# and 7za by some others. Likewise .rar: Homebrew dropped the unrar formula, so
+# unar is the reachable free extractor.
+_mo_extract_7z() {
+	local bin
+	for bin in 7z 7zz 7za; do
+		command -v "$bin" &>/dev/null && { command "$bin" x "$1"; return }
+	done
+	echo "extract: no 7-Zip binary found (try: $(_mo_pkg_hint p7zip-full))" >&2
+	return 1
+}
+
+_mo_extract_rar() {
+	local bin
+	for bin in unrar unar; do
+		command -v "$bin" &>/dev/null || continue
+		# unar takes the archive directly; unrar needs the x subcommand.
+		[[ "$bin" == unar ]] && { command unar "$1"; return }
+		command unrar x "$1"; return
+	done
+	echo "extract: no RAR extractor found (try: $(_mo_pkg_hint unrar))" >&2
+	return 1
+}
+
 _mo_extract_check() {
 	command -v "$1" &>/dev/null && return 0
 	echo "extract: '$1' not installed (try: $(_mo_pkg_hint ${_MO_EXTRACT_HINTS[$1]:-$1}))" >&2
@@ -43,7 +67,11 @@ _mo_extract_zip() {
 		echo "extract: refusing — '$outdir' already exists; remove it first, extract manually, or use --force-merge" >&2
 		return 1
 	fi
-	unzip -K -d "$outdir" "$f"
+	# -o only when merging: without an overwrite policy unzip stops on an
+	# interactive "replace ...? [y]es,[n]o,[A]ll" prompt that nothing answers.
+	local -a policy=()
+	[[ -n "$force_merge" ]] && policy=(-o)
+	unzip "${policy[@]}" -K -d "$outdir" "$f"
 }
 
 extract() {
@@ -90,13 +118,14 @@ extract() {
 			*.tar.bz2)  _mo_extract_check tar     && _mo_untar "$file" . || failed=1 ;;
 			*.tar.gz)   _mo_extract_check tar     && _mo_untar "$file" . || failed=1 ;;
 			*.tar.xz)   _mo_extract_check tar     && _mo_untar "$file" . || failed=1 ;;
-			*.tar.zst)  _mo_extract_check tar     && _mo_untar "$file" . || failed=1 ;;
+			*.tar.zst)  _mo_extract_check tar && _mo_extract_check zstd \
+			                                      && _mo_untar "$file" . || failed=1 ;;
 			*.tar)      _mo_extract_check tar     && _mo_untar "$file" . || failed=1 ;;
 			*.bz2)      _mo_extract_check bunzip2 && bunzip2 "$file"        || failed=1 ;;
 			*.gz)       _mo_extract_check gunzip  && gunzip  "$file"        || failed=1 ;;
 			*.zip)      _mo_extract_check unzip   && _mo_extract_zip "$file" "$force_merge" || failed=1 ;;
-			*.7z)       _mo_extract_check 7z      && 7z x    "$file"        || failed=1 ;;
-			*.rar)      _mo_extract_check unrar   && unrar x "$file"        || failed=1 ;;
+			*.7z)       _mo_extract_7z  "$file" || failed=1 ;;
+			*.rar)      _mo_extract_rar "$file" || failed=1 ;;
 			*.xz)       _mo_extract_check xz      && xz -d   "$file"        || failed=1 ;;
 			*.zst)      _mo_extract_check zstd    && zstd -d "$file"        || failed=1 ;;
 			*) echo "extract: unknown format '$file'" >&2; failed=1 ;;
