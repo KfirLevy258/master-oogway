@@ -149,13 +149,13 @@ _check_required_packages()
 	echo "" >&2
 	echo -e "  The following packages are required by master-oogway:" >&2
 	echo "" >&2
-	for pkg in "${missing[@]}"; do
+	for pkg in ${missing[@]+"${missing[@]}"}; do
 		echo -e "    ${COLOR_RED}•${COLOR_RESET} ${pkg}" >&2
 	done
 	echo "" >&2
 	echo -e "  Install them first, then re-run the installer:" >&2
 	echo "" >&2
-	echo -e "    ${COLOR_CYAN}$(_mo_pkg_hint "${missing[@]}")${COLOR_RESET}" >&2
+	echo -e "    ${COLOR_CYAN}$(_mo_pkg_hint ${missing[@]+"${missing[@]}"})${COLOR_RESET}" >&2
 	echo "" >&2
 	exit 1
 }
@@ -344,7 +344,7 @@ print_todos()
 	echo -e "${COLOR_YELLOW}│  Manual steps required after install                │${COLOR_RESET}"
 	echo -e "${COLOR_YELLOW}└─────────────────────────────────────────────────────┘${COLOR_RESET}"
 	local i=1
-	for item in "${_TODO_ITEMS[@]}"; do
+	for item in ${_TODO_ITEMS[@]+"${_TODO_ITEMS[@]}"}; do
 		echo -e "${COLOR_YELLOW}  ${i}. ${item}${COLOR_RESET}"
 		i=$(( i + 1 ))
 	done
@@ -413,7 +413,8 @@ _report_optional_deps()
 	echo -e "${COLOR_YELLOW}│  Recommended packages not installed                 │${COLOR_RESET}"
 	echo -e "${COLOR_YELLOW}└─────────────────────────────────────────────────────┘${COLOR_RESET}"
 
-	local record plugin cmd desc pkg last_plugin="" unique_pkgs=() seen=""
+	local record plugin cmd desc pkg last_plugin="" seen=""
+	local -a unique_pkgs=()
 	for record in ${_MO_MISSING[@]+"${_MO_MISSING[@]}"}; do
 		IFS=$'\t' read -r plugin cmd desc pkg <<< "$record"
 		if [[ "$plugin" != "$last_plugin" ]]; then
@@ -434,7 +435,7 @@ _report_optional_deps()
 		echo -e "  These packages are optional but recommended for the best experience."
 		echo -e "  Install them alongside master-oogway:"
 		echo ""
-		echo -e "    ${COLOR_CYAN}$(_mo_pkg_hint "${unique_pkgs[@]}")${COLOR_RESET}"
+		echo -e "    ${COLOR_CYAN}$(_mo_pkg_hint ${unique_pkgs[@]+"${unique_pkgs[@]}"})${COLOR_RESET}"
 		echo ""
 		echo -e "  Or skip them and install without the recommended packages:"
 		echo ""
@@ -448,7 +449,7 @@ _report_optional_deps()
 	else
 		echo -e "  Install recommended packages for the best experience:"
 		echo ""
-		echo -e "    ${COLOR_CYAN}$(_mo_pkg_hint "${unique_pkgs[@]}")${COLOR_RESET}"
+		echo -e "    ${COLOR_CYAN}$(_mo_pkg_hint ${unique_pkgs[@]+"${unique_pkgs[@]}"})${COLOR_RESET}"
 		echo ""
 	fi
 }
@@ -588,7 +589,11 @@ _init_plugins()
 		[[ "$line" =~ path[[:space:]]*=[[:space:]]*omz-custom/plugins/([^[:space:]]+) ]] \
 			&& submodules+=("${BASH_REMATCH[1]}")
 	done < "${INSTALL_DIR}/.gitmodules"
-	for plugin in "${submodules[@]}"; do
+	# Guard the expansion: if .gitmodules ever stops matching, an empty array
+	# is an unbound-variable error under `set -u` in bash 3.2, and the
+	# installer would die here with an obscure message instead of simply
+	# having nothing to heal.
+	for plugin in ${submodules[@]+"${submodules[@]}"}; do
 		local plugin_dir="${plugins_dir}/${plugin}"
 		if [[ ! -e "${plugin_dir}/.git" ]]; then
 			[[ -d "${plugin_dir}" ]] && rm -rf "${plugin_dir}"

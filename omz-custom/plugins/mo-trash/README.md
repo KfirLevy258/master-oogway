@@ -18,12 +18,6 @@ Skips silently if no trash tool is installed, leaving `rm` untouched.
 
 To bypass `rm`: use `\rm` (backslash-quoting skips aliases in any shell).
 
-## Configuration
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `MO_TRASH_DIR` | `$XDG_DATA_HOME/Trash` (or `~/.local/share/Trash`) | Path to the FreeDesktop trash directory. |
-
 ## How restore finds the original location
 
 On Linux, `trash-cli` records the original path itself and `trash-restore` uses

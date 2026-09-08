@@ -6,6 +6,7 @@ Git aliases and fuzzy pickers.
 |---------|-------------|
 | `ga` | `git add` |
 | `gaa` | `git add --all` |
+| `gac` | `git add .` (current directory only) |
 | `gs` | `git status` |
 | `gd` | `git difftool -y` |
 | `gds` | `gd --staged` |
@@ -30,7 +31,8 @@ Git aliases and fuzzy pickers.
 | `grb` | `git rebase` |
 | `gcp` | `git cherry-pick` |
 | `gundo` | undo last commit, keep changes staged |
-| `gclean` | remove untracked files and dirs |
+| `gclean` | `git clean -id` — interactive menu to remove untracked files and dirs |
+| `gcleanf` | `git clean -fd` — remove them without asking |
 | `groot` / `cdb` | cd to repo root; if already at root, cd to outer repo root (submodule case); no-op if not in a git repo |
 | `gsum` | print branch + staged/unstaged file summary |
 | `fbranch` | fuzzy-select a branch and switch to it |

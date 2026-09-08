@@ -1,0 +1,106 @@
+name: test
+
+# The suite has only ever run on macOS, while the platform layer changes
+# behaviour on both. Linux is the half that was never executed — several fixes
+# in this project (the epoch --utc flag, the zstd dependency check, mo-where's
+# detector, rm-to-trash, gsum's exit status) alter Linux behaviour, and nothing
+# proved they still work there.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  unit:
+    name: unit (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install shell dependencies
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update -qq
+            # bc for calc, trash-cli so the Linux trash path is exercised
+            # rather than skipped, and the archive tools extract/compress use.
+            sudo apt-get install -y -qq zsh bc trash-cli zstd xz-utils unzip zip
+          else
+            # macOS ships zsh, bc, tar, unzip and /usr/bin/trash already.
+            brew install --quiet zstd || true
+          fi
+
+      - name: Install oh-my-zsh
+        run: |
+          RUNZSH=no CHSH=no KEEP_ZSHRC=yes \
+            sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+      - name: Syntax
+        run: |
+          set -eu
+          bash -n install.sh
+          for f in $(git ls-files '*.zsh' '*.zsh-theme'); do zsh -n "$f"; done
+          zsh -n zshrc.master-oogway zshenv.master-oogway
+
+      - name: install.sh runs under bash 3.2 semantics
+        # macOS ships bash 3.2, where expanding an empty array under `set -u`
+        # is fatal. Nothing in CI ships that bash, so assert the constructs
+        # that depend on 4.x are absent rather than pretending to test it.
+        run: |
+          set -eu
+          # bash 4 only.
+          ! grep -q 'declare -A' install.sh
+          # An empty array expanded as "${a[@]}" is an unbound-variable error
+          # under `set -u` in bash 3.2. The safe form is ${a[@]+"${a[@]}"} —
+          # which contains the unsafe text, so strip guarded lines and
+          # comments before looking.
+          if grep -v '^[[:space:]]*#' install.sh \
+             | grep -v '\[@\]+' \
+             | grep -qE '"\$\{[A-Za-z_][A-Za-z0-9_]*\[@\]\}"'; then
+            echo "unguarded empty-array expansion (fatal on bash 3.2):" >&2
+            grep -nv '^[[:space:]]*#' install.sh | grep -v '\[@\]+' \
+              | grep -E '"\$\{[A-Za-z_][A-Za-z0-9_]*\[@\]\}"' >&2
+            exit 1
+          fi
+
+      - name: Platform lint
+        run: zsh test/lint_platform.zsh
+
+      - name: Unit suite
+        run: zsh test/run.zsh
+
+  e2e:
+    name: e2e install/uninstall (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install shell dependencies
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update -qq
+            sudo apt-get install -y -qq zsh bc trash-cli zstd xz-utils unzip zip util-linux
+          fi
+
+      - name: Install oh-my-zsh
+        run: |
+          RUNZSH=no CHSH=no KEEP_ZSHRC=yes \
+            sh -c "$(curl -fsSL https://raw.githubusercontent.com/ohmyzsh/ohmyzsh/master/tools/install.sh)"
+
+      # Installs into a throwaway HOME, exercises every command in a real
+      # interactive login shell, then uninstalls and checks the dotfiles came
+      # back. This is the only test that can see a lib nothing sources.
+      - name: End-to-end
+        run: bash test/e2e/run.sh

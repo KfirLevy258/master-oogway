@@ -20,6 +20,15 @@ OMZ="${ZSH:-$HOME/.oh-my-zsh}"
 [[ -d "$OMZ" ]] || { echo "e2e: oh-my-zsh not found at $OMZ" >&2; exit 1; }
 command -v script >/dev/null || { echo "e2e: needs script(1) for a pty" >&2; exit 1; }
 
+# script(1) takes its command differently on each platform: util-linux wants
+# -c "cmd" with the file last, BSD takes the file then the argv. A login shell
+# needs a real pty, so there is no portable way around it.
+if script --version 2>&1 | grep -qi util-linux; then
+	pty() { script -qec "$*" /dev/null; }
+else
+	pty() { script -q /dev/null "$@"; }
+fi
+
 TH="$(mktemp -d)"
 cleanup() { rm -rf "$TH"; }
 trap cleanup EXIT
@@ -30,7 +39,7 @@ printf '[user]\n\tname = e2e\n\temail = e2e@example.invalid\n' > "$TH/.gitconfig
 
 echo "── installing into $TH"
 ( printf '\n\n\n\n\n\n'; sleep 30 ) \
-	| script -q /dev/null env HOME="$TH" MO_CONFIG_DIR="$TH/.config/master-oogway" \
+	| pty env HOME="$TH" MO_CONFIG_DIR="$TH/.config/master-oogway" \
 		bash "$TH/src/install.sh" --no-recommended-packages >/dev/null 2>&1 || true
 [[ -L "$TH/.zshrc" ]] || { echo "e2e: install did not link ~/.zshrc" >&2; exit 1; }
 
@@ -46,14 +55,14 @@ cp "$REPO/test/e2e/feature_sweep.zsh" "$TH/sweep.zsh"
 echo "── running the sweep in a real login shell"
 out="$TH/out.txt"
 ( sleep 1; printf 'source $HOME/sweep.zsh\nexit\n'; sleep 240 ) \
-	| script -q /dev/null env HOME="$TH" /bin/zsh -l -i > "$out" 2>&1 || true
+	| pty env HOME="$TH" "$(command -v zsh)" -l -i > "$out" 2>&1 || true
 
 tr -d '\r' < "$out" | sed 's/\x1b\[[0-9;]*m//g' | sed -n '/── theme/,$p' \
 	| grep -E '──|PASS|FAIL|SKIP|passed:|^    - ' || true
 
 echo "── uninstalling"
 ( printf 'y\ny\nn\nn\n'; sleep 20 ) \
-	| script -q /dev/null env HOME="$TH" MO_CONFIG_DIR="$TH/.config/master-oogway" \
+	| pty env HOME="$TH" MO_CONFIG_DIR="$TH/.config/master-oogway" \
 		bash "$TH/src/install.sh" --uninstall >/dev/null 2>&1 || true
 for f in .zshrc .zshenv .editorconfig; do
 	[[ -L "$TH/$f" ]] && { echo "e2e: --uninstall left $f linked" >&2; exit 1; }
