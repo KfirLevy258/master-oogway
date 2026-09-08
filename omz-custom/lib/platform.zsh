@@ -320,3 +320,40 @@ _mo_brew_prefix() {
 		brew --prefix
 	fi
 }
+
+# -- trash ----------------------------------------------------------------------
+# Linux uses trash-cli, which implements the FreeDesktop spec and records the
+# original path for us. macOS ships /usr/bin/trash, which only moves the file:
+# Finder's "Put Back" location lives in a private database inside
+# ~/.Trash/.DS_Store and is not readable from a shell (verified — it is in
+# neither the file's xattrs nor the plain-text of that file), so mo-trash keeps
+# its own index there instead.
+
+_mo_trash_tool() {
+	if _mo_is_macos; then
+		command -v trash &>/dev/null && print -- trash
+	else
+		command -v trash-put &>/dev/null && print -- trash-put
+	fi
+}
+
+_mo_trash_dir() {
+	if _mo_is_macos; then
+		print -- "${HOME}/.Trash"
+	else
+		print -- "${XDG_DATA_HOME:-$HOME/.local/share}/Trash"
+	fi
+}
+
+# Move paths to the trash. Returns non-zero if any move failed.
+_mo_trash_put() {
+	local tool
+	tool=$(_mo_trash_tool) || return 1
+	[[ -n "$tool" ]] || return 1
+	command "$tool" "$@"
+}
+
+# True when the platform's trash tool can list and restore by original path.
+# trash-cli can; macOS's trash cannot, so mo-trash keeps its own index.
+_mo_trash_has_restore() { _mo_is_linux }
+
