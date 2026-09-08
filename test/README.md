@@ -37,6 +37,10 @@ plugin's aliases cannot leak into another's assertions.
 This is what stops the abstraction eroding one `[[ $(uname) == Darwin ]]` at a
 time.
 
+Until every plugin has been routed through `lib/platform.zsh`, the lint doubles
+as the remaining worklist: each line it prints is a call site still to move.
+It goes clean once the routing is complete, and is enforcing from then on.
+
 ## A note on tests that touch the terminal
 
 Anything reaching `fzf` must be given a non-interactive path — a `PATH` without
