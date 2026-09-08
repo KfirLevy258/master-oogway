@@ -124,6 +124,11 @@ copy_file()
 # without timestamp suffix, e.g. ~/.zshrc.pre-master-oogway). Echoes the
 # resolved path, or nothing if no backup exists.
 #
+# Ordered by the YYYYMMDD_HHMMSS suffix in the name, not by mtime: the name
+# records when the backup was taken, while mtime is rewritten by copying or
+# restoring the file. The suffix is fixed-width, so a lexical compare is
+# chronological.
+#
 # Why both forms: since 2026-05-17 _install_zshrc writes timestamped backups
 # (so a re-install doesn't clobber an existing one). Older installs left a
 # single .pre-master-oogway file with no timestamp. Restoring needs to find
@@ -154,7 +159,7 @@ _find_backup() {
 	local newest="" candidate
 	for candidate in "${backups[@]}"; do
 		[[ -f "$candidate" ]] || continue
-		[[ -z "$newest" || "$candidate" -nt "$newest" ]] && newest="$candidate"
+		[[ -z "$newest" || "$candidate" > "$newest" ]] && newest="$candidate"
 	done
 	if [[ -n "$newest" ]]; then
 		echo "$newest"
