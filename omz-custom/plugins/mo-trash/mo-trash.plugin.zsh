@@ -107,6 +107,15 @@ _mo_trash_names() {
 # refused is what made trash-prune and trash-empty claim success on a full trash.
 _mo_trash_need_readdir() {
 	_mo_trash_dir_readable "$MO_TRASH_DIR" && return 0
+	# Distinguish the two reasons a read can fail. Blaming TCC for a directory
+	# that simply is not there sends the user to System Settings for nothing —
+	# which is what happened under a relocated HOME, since /usr/bin/trash
+	# always writes to the real user's ~/.Trash regardless of $HOME.
+	if [[ ! -d "$MO_TRASH_DIR" ]]; then
+		print -r -- "${1}: ${MO_TRASH_DIR} does not exist." >&2
+		print -r -- "  Set MO_TRASH_DIR if your trash lives elsewhere." >&2
+		return 1
+	fi
 	print -r -- "${1}: cannot read ${MO_TRASH_DIR} — macOS restricts it." >&2
 	print -r -- "  Grant your terminal Full Disk Access in System Settings →" >&2
 	print -r -- "  Privacy & Security → Full Disk Access, then reopen the shell." >&2
