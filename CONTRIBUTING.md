@@ -416,3 +416,39 @@ gitstatus callback → __refresh_prompt (transient.zsh)
                    → PROMPT / RPROMPT strings assembled
 ```
 
+## Platform-specific code
+
+master-oogway runs on Linux and macOS. Nothing under `omz-custom/plugins/` or
+`omz-custom/themes/` may call `uname`, read `/proc`, or use a GNU-only flag —
+it calls a primitive in `omz-custom/lib/platform.zsh` instead.
+`zsh test/lint_platform.zsh` fails the build otherwise.
+
+When you need a capability the layer does not have yet:
+
+1. Add the primitive to `lib/platform.zsh`, pairing the Linux implementation
+   with the macOS one so a reviewer sees both.
+2. Add a direct test in `test/platform/platform_test.zsh`, branching on
+   `_mo_is_macos` where the expected value differs.
+3. Call it from the plugin.
+
+Do not add a `[[ $(uname) == Darwin ]]` branch inside a plugin. Spreading the
+decision across 22 plugins is what makes a codebase hard to port; one file with
+two branches keeps each plugin readable and makes a third platform one file.
+
+A file that is genuinely platform-bound may opt out by declaring why:
+
+```zsh
+# platform-lint: linux-only — lan-ssh needs cron and sshd_config.d.
+# platform-lint: metadata — names Linux package names for the installer.
+```
+
+`install.sh` runs under bash before any zsh is sourced, so it mirrors the few
+primitives it needs. Keep it **bash 3.2 compatible** — macOS ships bash 3.2 as
+`/bin/bash`, which `/usr/bin/env bash` resolves to, so no associative arrays.
+
+## Tests
+
+```bash
+zsh test/run.zsh            # everything
+zsh test/lint_platform.zsh  # the platform invariant
+```
