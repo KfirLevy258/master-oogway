@@ -25,6 +25,58 @@ readonly GITCONFIG_REAL="${CONF_DIR}/gitconfig"
 readonly EDITORCONFIG_REAL="${CONF_DIR}/editorconfig"
 readonly ZSHRC_SNAPSHOT="${CONF_DIR}/zshrc.snapshot"
 
+# -- Platform -------------------------------------------------------------------
+# install.sh runs under bash before any zsh is sourced, so it cannot use
+# omz-custom/lib/platform.zsh. The few primitives it needs are mirrored here;
+# keep the two in step.
+case "$(uname -s)" in
+	Linux)  MO_PLATFORM=linux ;;
+	Darwin) MO_PLATFORM=macos ;;
+	*)      MO_PLATFORM=linux ;;
+esac
+
+_mo_is_macos() { [[ "$MO_PLATFORM" == macos ]]; }
+
+# Debian package name -> Homebrew equivalent, where they differ. A case rather
+# than an associative array: macOS ships bash 3.2, which has none.
+_mo_brew_formula() {
+	case "$1" in
+		build-essential)                       echo "@xcode"   ;;
+		texlive-xetex)                         echo "@cask:basictex" ;;
+		trash-cli)                             echo "trash"    ;;
+		fd-find)                               echo "fd"       ;;
+		p7zip-full)                            echo "sevenzip" ;;
+		xz-utils)                              echo "xz"       ;;
+		wl-clipboard|xclip|xsel)               echo "@builtin" ;;
+		procps|iproute2|xdg-utils|bc|coreutils) echo "@builtin" ;;
+		*)                                     echo "$1"       ;;
+	esac
+}
+
+# Install command for one or more packages, phrased for this platform.
+_mo_pkg_hint() {
+	if ! _mo_is_macos; then
+		echo "sudo apt install $*"
+		return
+	fi
+	local pkg mapped
+	local formulae="" casks=""
+	for pkg in "$@"; do
+		mapped="$(_mo_brew_formula "$pkg")"
+		case "$mapped" in
+			@xcode)   echo "xcode-select --install"; return ;;
+			@builtin) continue ;;
+			@cask:*)  casks="${casks}${casks:+ }${mapped#@cask:}" ;;
+			*)        formulae="${formulae}${formulae:+ }${mapped}" ;;
+		esac
+	done
+	# Formulae and casks cannot share one brew invocation.
+	local out=""
+	[[ -n "$formulae" ]] && out="brew install ${formulae}"
+	[[ -n "$casks"    ]] && out="${out}${out:+ && }brew install --cask ${casks}"
+	[[ -n "$out"      ]] && echo "$out"
+}
+
 # -- Colors & logging -----------------------------------------------------------
 
 if [[ -t 1 ]] && [[ "${NO_COLOR:-}" == "" ]] && [[ "${TERM:-}" != "dumb" ]] && command -v tput &>/dev/null; then
@@ -58,7 +110,7 @@ trap '_on_error $LINENO' ERR
 require_cmd()
 {
 	local cmd="$1" pkg="${2:-$1}"
-	command -v "$cmd" &>/dev/null || die "'${cmd}' not found. Install: sudo apt install ${pkg}"
+	command -v "$cmd" &>/dev/null || die "'${cmd}' not found. Install: $(_mo_pkg_hint "${pkg}")"
 }
 
 # -- Required package check -----------------------------------------------------
@@ -87,7 +139,7 @@ _check_required_packages()
 	echo "" >&2
 	echo -e "  Install them first, then re-run the installer:" >&2
 	echo "" >&2
-	echo -e "    ${COLOR_CYAN}sudo apt install ${missing[*]}${COLOR_RESET}" >&2
+	echo -e "    ${COLOR_CYAN}$(_mo_pkg_hint "${missing[@]}")${COLOR_RESET}" >&2
 	echo "" >&2
 	exit 1
 }
@@ -291,55 +343,40 @@ _collect_missing_optionals()
 {
 	local plugins_dir="${INSTALL_DIR}/omz-custom/plugins"
 
-	local plugin_dir dep_file plugin_name raw_deps raw_apt cmd desc pkg
+	_MO_MISSING=()
+
+	local dep_file plugin_name raw cmd desc pkg
 	for dep_file in "${plugins_dir}"/mo-*/optional-deps.zsh; do
 		[[ -f "$dep_file" ]] || continue
-		plugin_dir="${dep_file%/optional-deps.zsh}"
-		plugin_name="${plugin_dir##*/}"
+		plugin_name="$(basename "$(dirname "$dep_file")")"
 
-		raw_deps=$(zsh -c '
-			source "$1"
+		# One pass emits cmd, description and package together, so the three
+		# maps the old version kept in step cannot drift apart.
+		raw=$(zsh -c '
+			source "$1" 2>/dev/null || exit 0
 			for k in "${(@k)MO_OPTIONAL_DEPS}"; do
-				printf "%s\t%s\n" "$k" "${MO_OPTIONAL_DEPS[$k]}"
+				printf "%s\t%s\t%s\n" "$k" "${MO_OPTIONAL_DEPS[$k]}" "${MO_OPTIONAL_APT[$k]:-$k}"
 			done
 		' -- "$dep_file" 2>/dev/null) || continue
 
-		raw_apt=$(zsh -c '
-			source "$1"
-			for k in "${(@k)MO_OPTIONAL_APT}"; do
-				printf "%s\t%s\n" "$k" "${MO_OPTIONAL_APT[$k]}"
-			done
-		' -- "$dep_file" 2>/dev/null) || continue
-
-		while IFS=$'\t' read -r cmd desc; do
+		while IFS=$'\t' read -r cmd desc pkg; do
 			[[ -n "$cmd" ]] || continue
-			# key by plugin+cmd: the same command has a different description per plugin
-			_mo_descriptions["${plugin_name}"$'\t'"${cmd}"]="$desc"
-		done <<< "$raw_deps"
-
-		while IFS=$'\t' read -r cmd pkg; do
-			[[ -n "$cmd" ]] || continue
-			_mo_apt_pkgs["$cmd"]="$pkg"
-		done <<< "$raw_apt"
-
-		local missing_for_plugin=""
-		while IFS=$'\t' read -r cmd _; do
-			[[ -n "$cmd" ]] || continue
-			# command -v is PATH-only; daemons/tools in /usr/sbin are invisible to non-root on Debian
+			# command -v is PATH-only; tools in /usr/sbin are invisible to a
+			# non-root user on Debian.
 			{ command -v "$cmd" &>/dev/null || [[ -x "/usr/sbin/$cmd" ]] || [[ -x "/sbin/$cmd" ]]; } \
 				&& continue
 			case "$cmd" in
 				fd)  command -v fdfind &>/dev/null && continue ;;
 				bat) command -v batcat &>/dev/null && continue ;;
 			esac
-			missing_for_plugin="${missing_for_plugin} ${cmd}"
-		done <<< "$raw_deps"
-
-		missing_for_plugin="${missing_for_plugin# }"
-		[[ -n "$missing_for_plugin" ]] && _mo_missing_cmds["$plugin_name"]="$missing_for_plugin"
+			# Skip tools this platform provides by other means — reporting
+			# xclip as missing on macOS, where pbcopy covers it, is noise.
+			[[ "$(_mo_brew_formula "$pkg")" == "@builtin" ]] && _mo_is_macos && continue
+			_MO_MISSING+=("${plugin_name}"$'\t'"${cmd}"$'\t'"${desc}"$'\t'"${pkg}")
+		done <<< "$raw"
 	done
 
-	[[ ${#_mo_missing_cmds[@]} -gt 0 ]]
+	[[ ${#_MO_MISSING[@]} -gt 0 ]]
 }
 
 # _report_optional_deps: prints the optional-package table and install hint.
@@ -356,30 +393,20 @@ _report_optional_deps()
 	echo -e "${COLOR_YELLOW}│  Recommended packages not installed                 │${COLOR_RESET}"
 	echo -e "${COLOR_YELLOW}└─────────────────────────────────────────────────────┘${COLOR_RESET}"
 
-	local all_missing_pkgs=()
-	local plugin first cmd desc pkg; local -a cmds_for_plugin
-	for plugin in "${!_mo_missing_cmds[@]}"; do
-		first=true
-		read -ra cmds_for_plugin <<< "${_mo_missing_cmds[$plugin]}"
-		for cmd in "${cmds_for_plugin[@]}"; do
-			desc="${_mo_descriptions["${plugin}"$'\t'"${cmd}"]:-$cmd}"
-			pkg="${_mo_apt_pkgs[$cmd]:-$cmd}"
-			if $first; then
-				printf "  ${COLOR_YELLOW}%-20s${COLOR_RESET}  %-12s  %s\n" "$plugin" "$cmd" "$desc"
-				first=false
-			else
-				printf "  %-20s  %-12s  %s\n" "" "$cmd" "$desc"
-			fi
-			all_missing_pkgs+=("$pkg")
-		done
-	done
-
-	local unique_pkgs=()
-	declare -A _seen_pkg=()
-	for p in "${all_missing_pkgs[@]}"; do
-		[[ -z "${_seen_pkg[$p]+set}" ]] || continue
-		_seen_pkg["$p"]=1
-		unique_pkgs+=("$p")
+	local record plugin cmd desc pkg last_plugin="" unique_pkgs=() seen=""
+	for record in ${_MO_MISSING[@]+"${_MO_MISSING[@]}"}; do
+		IFS=$'\t' read -r plugin cmd desc pkg <<< "$record"
+		if [[ "$plugin" != "$last_plugin" ]]; then
+			printf "  ${COLOR_YELLOW}%-20s${COLOR_RESET}  %-12s  %s\n" "$plugin" "$cmd" "$desc"
+			last_plugin="$plugin"
+		else
+			printf "  %-20s  %-12s  %s\n" "" "$cmd" "$desc"
+		fi
+		# Dedup without an associative array: bash 3.2, which macOS ships, has none.
+		case " ${seen} " in
+			*" ${pkg} "*) ;;
+			*) seen="${seen} ${pkg}"; unique_pkgs+=("$pkg") ;;
+		esac
 	done
 
 	echo ""
@@ -387,7 +414,7 @@ _report_optional_deps()
 		echo -e "  These packages are optional but recommended for the best experience."
 		echo -e "  Install them alongside master-oogway:"
 		echo ""
-		echo -e "    ${COLOR_CYAN}sudo apt install ${unique_pkgs[*]}${COLOR_RESET}"
+		echo -e "    ${COLOR_CYAN}$(_mo_pkg_hint "${unique_pkgs[@]}")${COLOR_RESET}"
 		echo ""
 		echo -e "  Or skip them and install without the recommended packages:"
 		echo ""
@@ -401,7 +428,7 @@ _report_optional_deps()
 	else
 		echo -e "  Install recommended packages for the best experience:"
 		echo ""
-		echo -e "    ${COLOR_CYAN}sudo apt install ${unique_pkgs[*]}${COLOR_RESET}"
+		echo -e "    ${COLOR_CYAN}$(_mo_pkg_hint "${unique_pkgs[@]}")${COLOR_RESET}"
 		echo ""
 	fi
 }
@@ -715,6 +742,7 @@ if [[ "$MO_UNINSTALL" == true ]]; then
 	if [[ -f /etc/ssh/sshd_config.d/99-master-oogway-acceptenv.conf ]]; then
 		if confirm "Remove sshd AcceptEnv drop-in and reload sshd? (sudo)"; then
 			sudo rm -f /etc/ssh/sshd_config.d/99-master-oogway-acceptenv.conf
+			# Linux-only: lan-ssh is not offered on macOS.
 			sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true
 			success "Removed sshd AcceptEnv drop-in"
 		fi
@@ -756,20 +784,35 @@ fi
 
 [[ "${MO_FIRST_INSTALL}" == true ]] && _mo_banner
 
-[[ "$(uname)" == "Linux" ]] || die "dragon requires Linux (Ubuntu 24.04). macOS/BSD are not supported."
+case "$MO_PLATFORM" in
+	linux) success "Linux detected" ;;
+	macos) success "macOS detected ($(uname -m))" ;;
+	*)     die "Unsupported platform: $(uname -s). master-oogway supports Linux and macOS." ;;
+esac
 
 _check_required_packages
 
 # en_US.UTF-8 locale — required for correct terminal rendering and zshrc's
 # locale block. Not auto-fixed: update-locale writes /etc/default/locale and
 # takes effect only in a new login shell, so the user must run it themselves.
-if ! locale -a 2>/dev/null | grep -qiE '^en_US\.(utf-?8|UTF-8)$'; then
+# Captured rather than piped: `grep -q` exits on the first match, and the
+# SIGPIPE that gives `locale` makes the whole pipeline fail under
+# `set -o pipefail` — reporting the locale as missing when it is present.
+# macOS lists 80+ UTF-8 locales, so the early exit is guaranteed there.
+_mo_locales="$(locale -a 2>/dev/null || true)"
+if ! grep -qiE '^en_US\.(utf-?8|UTF-8)$' <<< "$_mo_locales"; then
 	warn "en_US.UTF-8 locale is not generated on this system."
-	todo_item "Set up locale (run these commands, then open a new terminal):
+	if _mo_is_macos; then
+		# macOS always ships en_US.UTF-8; reaching here means the locale
+		# database is genuinely unusual, so there is nothing to generate.
+		warn "en_US.UTF-8 not reported by locale -a — unusual on macOS; check your terminal's locale settings"
+	else
+		todo_item "Set up locale (run these commands, then open a new terminal):
 	  sudo apt install -y locales
 	  sudo sed -i 's/^# *en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen
 	  sudo locale-gen en_US.UTF-8
 	  sudo update-locale LANG=en_US.UTF-8"
+	fi
 else
 	success "en_US.UTF-8 locale already generated"
 fi
@@ -1115,7 +1158,8 @@ EOF
 
 # -- Done -----------------------------------------------------------------------
 
-declare -A _mo_missing_cmds=() _mo_descriptions=() _mo_apt_pkgs=()
+# Records of missing optional tools: "plugin<TAB>cmd<TAB>desc<TAB>package".
+_MO_MISSING=()
 if _collect_missing_optionals; then
 	if [[ "$_MO_UPDATE_MODE" == true ]]; then
 		# update: never block, report at end so the user is informed
@@ -1143,8 +1187,11 @@ if [[ "${MO_FIRST_INSTALL}" == true ]]; then
 	echo -e "${COLOR_CYAN}╠══════════════════════════════════════════════════════════╣${COLOR_RESET}"
 	echo -e "${COLOR_CYAN}║${COLOR_RESET}  Pick your prompt preset:                                ${COLOR_CYAN}║${COLOR_RESET}"
 	echo -e "${COLOR_CYAN}║${COLOR_RESET}      ${COLOR_GREEN}master-oogway configure${COLOR_RESET}                             ${COLOR_CYAN}║${COLOR_RESET}"
-	echo -e "${COLOR_CYAN}║${COLOR_RESET}  Forward your theme over SSH to other machines:          ${COLOR_CYAN}║${COLOR_RESET}"
-	echo -e "${COLOR_CYAN}║${COLOR_RESET}      ${COLOR_GREEN}master-oogway lan-ssh setup${COLOR_RESET}                         ${COLOR_CYAN}║${COLOR_RESET}"
+	# lan-ssh is Linux-only, so it is not advertised on macOS.
+	if ! _mo_is_macos; then
+		echo -e "${COLOR_CYAN}║${COLOR_RESET}  Forward your theme over SSH to other machines:          ${COLOR_CYAN}║${COLOR_RESET}"
+		echo -e "${COLOR_CYAN}║${COLOR_RESET}      ${COLOR_GREEN}master-oogway lan-ssh setup${COLOR_RESET}                         ${COLOR_CYAN}║${COLOR_RESET}"
+	fi
 	echo -e "${COLOR_CYAN}╚══════════════════════════════════════════════════════════╝${COLOR_RESET}"
 	echo ""
 fi
