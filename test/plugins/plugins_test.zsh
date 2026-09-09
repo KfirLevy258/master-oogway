@@ -55,7 +55,19 @@ _mo_t mo-files "cd '$td/o' && extract '$td/a.tar.gz'" >/dev/null
 assert_eq "hi" "$(command cat "$td/o/f.txt" 2>/dev/null)" "extract handles .tar.gz"
 command rm -rf "$td"
 
-assert_contains "$(_mo_t mo-process 'psgrep zsh')" "zsh" "psgrep finds a running zsh"
+# Search for a process this test starts, not for "zsh": a CI runner executing
+# the suite non-interactively may have no other zsh alive, and pgrep would
+# correctly find nothing.
+() {
+	local marker="mo-psgrep-probe-$$"
+	sleep 30 &
+	local probe=$!
+	# pgrep matches the command line, so give it one we control.
+	assert_contains "$(_mo_t mo-process "psgrep sleep")" "sleep" \
+		"psgrep finds a running process by name"
+	kill "$probe" 2>/dev/null
+	wait "$probe" 2>/dev/null
+}
 assert_contains "$(_mo_t mo-git 'alias gs')" "git status" "git aliases load"
 
 # ── platform-specific expectations ───────────────────────────────────────────
@@ -83,7 +95,12 @@ if _mo_is_macos; then
 		"lan_scan derives a CIDR subnet without iproute2"
 	assert_contains "$(_mo_t mo-brew 'type bup')" "bup" "mo-brew loads on macOS"
 else
-	assert_eq "" "$(_mo_t mo-brew 'type bup 2>/dev/null')" "mo-brew declines on Linux"
+	# whence -w, not `type`: zsh's `type` writes "bup not found" to STDOUT, so
+	# redirecting stderr does not silence it and the empty-string expectation
+	# could never hold. whence -w prints nothing and returns 1 when undefined.
+	assert_fail "mo-brew declines on Linux" _mo_t mo-brew 'whence -w bup'
+	assert_not_contains "$(_mo_t mo-brew 'whence -w bup')" "function" \
+		"mo-brew defines no bup function on Linux"
 fi
 
 assert_contains "$(_mo_t mo-colorize-override 'alias grep')" "--color=auto" "grep is colorized"

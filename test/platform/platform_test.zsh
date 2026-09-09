@@ -100,8 +100,16 @@ assert_match "$(_mo_local_ip)" '^([0-9]{1,3}\.){3}[0-9]{1,3}$|^$' "local_ip is I
 # Performance/Efficiency, M5 reports Super/Performance.
 assert_match "$(_mo_core_summary)" '^[0-9]+[A-Z]\+[0-9]+[A-Z]$|^[0-9]+$' "core_summary is well-formed"
 if _mo_is_macos; then
+	# Only physical Apple Silicon exposes hw.perflevelN.name; a VM (GitHub's
+	# macos runners included) reports no perf levels at all, and _mo_perf_cores
+	# correctly falls back to a flat count there. Assert the pairing only when
+	# the kernel actually offers the tiers.
 	typeset -a cn=( ${(z)$(_mo_perf_core_names)} )
-	assert_true "perf_core_names returns two names on Apple Silicon" "${#cn} == 2"
+	if [[ -n "$(sysctl -n hw.perflevel0.name 2>/dev/null)" ]]; then
+		assert_true "perf_core_names returns two names on Apple Silicon" "${#cn} == 2"
+	else
+		assert_eq "0" "${#cn}" "perf_core_names is empty where the kernel reports no tiers"
+	fi
 fi
 
 # -- platform detection ---------------------------------------------------------

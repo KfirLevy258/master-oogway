@@ -86,8 +86,13 @@ cp "$REPO/test/e2e/feature_sweep.zsh" "$TH/sweep.zsh"
 
 echo "── running the sweep in a real login shell"
 out="$TH/out.txt"
+# ZSH_DISABLE_COMPFIX: on a CI runner some completion directory is
+# world-writable, and oh-my-zsh then prints a multi-line "Insecure
+# completion-dependent directories detected" banner at every shell start. It
+# lands on stdout, so it prefixes the output of every assertion and defeats any
+# anchored match. It is a property of the runner, not of anything under test.
 ( sleep 1; printf 'source $HOME/sweep.zsh\nexit\n'; sleep 240 ) \
-	| pty env HOME="$TH" "$(command -v zsh)" -l -i > "$out" 2>&1 || true
+	| pty env HOME="$TH" ZSH_DISABLE_COMPFIX=true "$(command -v zsh)" -l -i > "$out" 2>&1 || true
 
 tr -d '\r' < "$out" | sed 's/\x1b\[[0-9;]*m//g' | sed -n '/── theme/,$p' \
 	| grep -E '──|PASS|FAIL|SKIP|passed:|^    - ' || true
