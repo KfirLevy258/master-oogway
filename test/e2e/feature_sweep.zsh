@@ -150,7 +150,12 @@ check "bak"               "->"        "cd $SB && bak s/f.txt"
 check "sizeof"            "f.txt"     "cd $SB && sizeof s/f.txt"
 # mo-bat-override ships disabled, so `cat` is the system cat unless it is
 # turned on. Source it explicitly to exercise the -A translation.
-if command -v bat &>/dev/null; then
+# batcat too: Debian and Ubuntu ship bat under that name, and every consumer in
+# the tree falls back to it — mo-bat-override, mo-search, mo-files,
+# mo-shell-tools and mo-man all check both. Probing only for "bat" skipped this
+# on the one platform where the fallback is what is being exercised, so
+# installing the recommended package left the check silently not running.
+if command -v bat &>/dev/null || command -v batcat &>/dev/null; then
   check "cat -A (BSD -vet)" 'b$' \
     "source \$ZSH_CUSTOM/plugins/mo-bat-override/mo-bat-override.plugin.zsh 2>/dev/null; cd $SB && printf 'a\tb\n' > tab.txt && cat -A tab.txt"
 else skip "cat -A" "bat absent"; fi
