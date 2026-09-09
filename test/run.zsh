@@ -11,5 +11,5 @@ for f in "$MO_ROOT"/test/**/*_test.zsh(N); do
 done
 
 print -r -- ""
-print -r -- "passed: $_T_PASS   failed: $_T_FAIL"
+print -r -- "passed: $_T_PASS   failed: $_T_FAIL   skipped: $_T_SKIP"
 (( _T_FAIL == 0 ))

@@ -90,9 +90,19 @@ assert_ok "ssh_peer answers without ss" _mo_ssh_peer 127.0.0.1
 
 # ── mo-search: two parsers that returned nothing on macOS ────────────────────
 # `man -k ''` matches everything under man-db and nothing under mandoc.
+# `man -k` of any kind needs a built index, and `command -v man` does not tell
+# you there is one. Installing packages leaves man-db rebuilding its cache in
+# the background, and inside that window every apropos query returns nothing —
+# which failed this assertion on a CI runner while saying nothing whatever about
+# the pattern under test. Probe with a concrete page first: no index means the
+# comparison is moot, a working index means a `.` that finds nothing is real.
 if command -v man &>/dev/null; then
-	assert_true "man -k . finds pages (man -k '' finds none under mandoc)" \
-		"$(man -k . 2>/dev/null | wc -l) > 0"
+	if (( $(man -k ls 2>/dev/null | wc -l) > 0 )); then
+		assert_true "man -k . finds pages (man -k '' finds none under mandoc)" \
+			"$(man -k . 2>/dev/null | wc -l) > 0"
+	else
+		t_skip "man -k . finds pages" "no man index on this machine"
+	fi
 fi
 
 # The apropos output shape differs: man-db separates the section, mandoc glues

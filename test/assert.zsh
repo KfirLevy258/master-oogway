@@ -1,8 +1,14 @@
-typeset -gi _T_PASS=0 _T_FAIL=0
+typeset -gi _T_PASS=0 _T_FAIL=0 _T_SKIP=0
 typeset -g  _T_FILE=""
 
 _t_ok()   { (( _T_PASS++ )); print -r -- "  ok     $1" }
 _t_fail() { (( _T_FAIL++ )); print -r -- "  NOT OK $1"; [[ -n "$2" ]] && print -r -- "         $2" }
+
+# An assertion this machine cannot make. Say so out loud: conditional blocks
+# used to just not run, so a suite that skipped six checks was indistinguishable
+# from one that made them, and the pass counts differed between machines with no
+# way to account for the gap.
+t_skip()  { (( _T_SKIP++ )); print -r -- "  skip   $1${2:+  — $2}" }
 
 assert_eq() {
 	local expected="$1" actual="$2" label="$3"

@@ -43,6 +43,12 @@ jobs:
             # that hung the suite on a real desktop reached over SSH.
             sudo apt-get install -y -qq zsh bc trash-cli zstd xz-utils unzip zip \
               wl-clipboard xvfb xclip
+            # Build the man index synchronously. apt leaves man-db rebuilding it
+            # in the background, and while that runs every apropos query returns
+            # nothing — which failed the `man -k .` assertion on one run and
+            # passed on the next. Without this the test is not flaky, it simply
+            # skips, and the Linux side of that check stops being covered.
+            sudo mandb -q 2>/dev/null || true
           else
             # macOS ships zsh, bc, tar, unzip and /usr/bin/trash already.
             brew install --quiet zstd || true
