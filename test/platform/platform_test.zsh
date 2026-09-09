@@ -105,10 +105,16 @@ if _mo_is_macos; then
 	# correctly falls back to a flat count there. Assert the pairing only when
 	# the kernel actually offers the tiers.
 	typeset -a cn=( ${(z)$(_mo_perf_core_names)} )
-	if [[ -n "$(sysctl -n hw.perflevel0.name 2>/dev/null)" ]]; then
+	# Both tiers, not just the first: _mo_perf_core_names prints nothing unless
+	# hw.perflevel0.name AND hw.perflevel1.name exist. A virtualised Mac — the
+	# GitHub runner included — reports perflevel0 alone, all cores being equal
+	# there, so a guard on perflevel0 took the two-name branch while the
+	# function correctly returned nothing.
+	if [[ -n "$(sysctl -n hw.perflevel0.name 2>/dev/null)" \
+	   && -n "$(sysctl -n hw.perflevel1.name 2>/dev/null)" ]]; then
 		assert_true "perf_core_names returns two names on Apple Silicon" "${#cn} == 2"
 	else
-		assert_eq "0" "${#cn}" "perf_core_names is empty where the kernel reports no tiers"
+		assert_eq "0" "${#cn}" "perf_core_names is empty where the kernel reports one tier"
 	fi
 fi
 

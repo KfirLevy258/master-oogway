@@ -29,14 +29,32 @@ OMZ="${ZSH:-$HOME/.oh-my-zsh}"
 [[ -d "$OMZ" ]] || { echo "e2e: oh-my-zsh not found at $OMZ" >&2; exit 1; }
 command -v script >/dev/null || { echo "e2e: needs script(1) for a pty" >&2; exit 1; }
 
-# script(1) takes its command differently on each platform: util-linux wants
+# pty <seconds> <command...> — run a command on a real pty, time-bounded.
+#
+# script(1) takes its command differently per platform: util-linux wants
 # -c "cmd" with the file last, BSD takes the file then the argv. A login shell
-# needs a real pty, so there is no portable way around it.
+# needs a real pty, so there is no portable way around that.
+#
+# The bound is not optional. script waits for its child, and a login shell that
+# never reads the "exit" we feed it — a prompt with nothing to answer it, a
+# tool blocking on a device that is not there — hangs the pipeline. Unbounded,
+# that consumed GitHub's six-hour job limit before the runner killed the job,
+# which reports as "cancelled" and explains nothing. macOS has no timeout(1);
+# perl's alarm is present everywhere.
 if script --version 2>&1 | grep -qi util-linux; then
-	pty() { script -qec "$*" /dev/null; }
+	_SCRIPT_FLAVOUR=util-linux
 else
-	pty() { script -q /dev/null "$@"; }
+	_SCRIPT_FLAVOUR=bsd
 fi
+
+pty() {
+	local secs="$1"; shift
+	if [[ "$_SCRIPT_FLAVOUR" == util-linux ]]; then
+		perl -e 'alarm shift; exec @ARGV' "$secs" script -qec "$*" /dev/null
+	else
+		perl -e 'alarm shift; exec @ARGV' "$secs" script -q /dev/null "$@"
+	fi
+}
 
 TH="$(mktemp -d)"
 
@@ -71,7 +89,7 @@ printf '[user]\n\tname = e2e\n\temail = e2e@example.invalid\n' > "$TH/.gitconfig
 
 echo "── installing into $TH"
 ( printf '\n\n\n\n\n\n'; sleep 30 ) \
-	| pty env HOME="$TH" MO_CONFIG_DIR="$TH/.config/master-oogway" \
+	| pty 420 env HOME="$TH" MO_CONFIG_DIR="$TH/.config/master-oogway" \
 		bash "$TH/src/install.sh" --no-recommended-packages >/dev/null 2>&1 || true
 [[ -L "$TH/.zshrc" ]] || { echo "e2e: install did not link ~/.zshrc" >&2; exit 1; }
 
@@ -92,14 +110,15 @@ out="$TH/out.txt"
 # lands on stdout, so it prefixes the output of every assertion and defeats any
 # anchored match. It is a property of the runner, not of anything under test.
 ( sleep 1; printf 'source $HOME/sweep.zsh\nexit\n'; sleep 240 ) \
-	| pty env HOME="$TH" ZSH_DISABLE_COMPFIX=true "$(command -v zsh)" -l -i > "$out" 2>&1 || true
+	| pty 900 env HOME="$TH" ZSH_DISABLE_COMPFIX=true TERM="${TERM:-xterm-256color}" \
+		"$(command -v zsh)" -l -i > "$out" 2>&1 || true
 
 tr -d '\r' < "$out" | sed 's/\x1b\[[0-9;]*m//g' | sed -n '/── theme/,$p' \
 	| grep -E '──|PASS|FAIL|SKIP|passed:|^    - ' || true
 
 echo "── uninstalling"
 ( printf 'y\ny\nn\nn\n'; sleep 20 ) \
-	| pty env HOME="$TH" MO_CONFIG_DIR="$TH/.config/master-oogway" \
+	| pty 420 env HOME="$TH" MO_CONFIG_DIR="$TH/.config/master-oogway" \
 		bash "$TH/src/install.sh" --uninstall >/dev/null 2>&1 || true
 for f in .zshrc .zshenv .editorconfig; do
 	[[ -L "$TH/$f" ]] && { echo "e2e: --uninstall left $f linked" >&2; exit 1; }

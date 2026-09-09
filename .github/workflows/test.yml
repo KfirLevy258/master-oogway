@@ -11,10 +11,17 @@ on:
   pull_request:
   workflow_dispatch:
 
+# A new push supersedes the old run; without this a hung job keeps a runner for
+# six hours while newer commits queue behind it.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unit:
     name: unit (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -89,6 +96,9 @@ jobs:
   e2e:
     name: e2e install/uninstall (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    # A hang must fail fast, not burn the six-hour default and report as
+    # "cancelled" with no useful log.
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:

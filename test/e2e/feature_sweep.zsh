@@ -9,7 +9,12 @@ typeset -ga FAILED=()
 # the command runs far too late. Without this every nested shell prefixes its
 # output with the banner, which silently defeats any anchored assertion — and
 # made an empty needle look like a reasonable choice in the first place.
-_t() { perl -e 'alarm shift; exec @ARGV' "$1" env MO_WELCOME_FIELDS= ZSH_DISABLE_COMPFIX=true "${@:2}" 2>&1 }
+# TERM: a CI runner starts with none, and anything calling tput at shell
+# startup then writes "tput: No value for $TERM and no -T specified" to stderr,
+# which 2>&1 folds into the captured output and defeats anchored matches.
+_t() { perl -e 'alarm shift; exec @ARGV' "$1" \
+	env MO_WELCOME_FIELDS= ZSH_DISABLE_COMPFIX=true TERM="${TERM:-xterm-256color}" \
+	"${@:2}" 2>&1 }
 
 ok()   { print -r -- "  \e[32mPASS\e[0m  $1"; (( PASS++ )) }
 bad()  { print -r -- "  \e[31mFAIL\e[0m  $1${2:+  — $2}"; (( FAIL++ )); FAILED+=("$1") }
