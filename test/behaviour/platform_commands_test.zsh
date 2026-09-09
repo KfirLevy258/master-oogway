@@ -165,6 +165,15 @@ if _mo_is_macos; then
 		"casks are emitted as their own brew invocation"
 	assert_not_contains "$(_mo_pkg_hint unrar)" "brew install unrar" \
 		"the removed unrar formula is not suggested"
+	# xclip and wl-clipboard carry the same note, and it was emitted per package,
+	# so a real install printed the identical sentence twice on one line.
+	assert_eq "1" \
+		"$(_mo_pkg_hint xclip wl-clipboard | command grep -o 'pbcopy/pbpaste' | command wc -l | command tr -d ' ')" \
+		"a note shared by two packages is printed once"
+	# The hint is displayed as a line to paste, so a note must not sit after a
+	# "; " where it reads as another command.
+	assert_not_contains "$(_mo_pkg_hint nmap xclip)" "; macOS" \
+		"notes are not appended as if they were shell commands"
 fi
 
 # ── color pick owns the tty for the whole session ────────────────────────────

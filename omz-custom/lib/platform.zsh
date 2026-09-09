@@ -631,8 +631,18 @@ _mo_pkg_hint() {
 	(( ${#casks}    )) && parts+=("brew install --cask ${casks[*]}")
 	local out="${(j: && :)parts}"
 	if (( ${#notes} )); then
-		[[ -n "$out" ]] && out+="; "
-		out+="${(j:; :)notes}"
+		# Two packages can carry the same note — xclip and wl-copy both resolve
+		# to "macOS uses pbcopy/pbpaste" — and printing it once per package put
+		# the identical sentence on the line twice.
+		notes=(${(u)notes})
+		if [[ -n "$out" ]]; then
+			# Parenthesised rather than appended after "; ". This string is
+			# shown under "Install recommended packages" as a line to paste,
+			# and "; macOS uses pbcopy/pbpaste" is not a command.
+			out+=" (${(j:; :)notes})"
+		else
+			out="${(j:; :)notes}"
+		fi
 	fi
 	print -- "$out"
 }
