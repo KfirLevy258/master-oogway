@@ -42,7 +42,7 @@ if _mo_clip_tool >/dev/null 2>&1; then
 	assert_eq "clip-probe-$$" "$(_mo_paste)" "clip writes to the system clipboard"
 	[[ -n "$_saved_clip" ]] && _mo_clip "$_saved_clip"
 else
-	print -r -- "  skip   clip writes to the system clipboard (no clipboard tool)"
+	t_skip "clip writes to the system clipboard" "no clipboard tool"
 fi
 
 assert_match "$(_mo_t mo-build '_mo_build_jobs_value')" '^[0-9]+$' "build job count is numeric"

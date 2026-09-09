@@ -37,10 +37,13 @@ jobs:
             sudo apt-get update -qq
             # bc for calc, trash-cli so the Linux trash path is exercised
             # rather than skipped, and the archive tools extract/compress use.
-            # wl-clipboard plus a headless Wayland compositor, so the Linux
-            # clipboard branch is actually exercised instead of skipped. Without
-            # a display these are installed-but-unusable, which is the state
-            # that hung the suite on a real desktop reached over SSH.
+            # xclip under Xvfb, which the test steps start with xvfb-run: that
+            # is what makes the Linux clipboard branch run instead of skip.
+            # wl-clipboard is installed but not exercised — there is no Wayland
+            # compositor here, so _mo_clip_tool passes it over. Installed but
+            # unusable is deliberate: it is the state that hung the suite on a
+            # real desktop reached over SSH, and the guard against it belongs
+            # under test too.
             sudo apt-get install -y -qq zsh bc trash-cli zstd xz-utils unzip zip \
               wl-clipboard xvfb xclip
             # Build the man index synchronously. apt leaves man-db rebuilding it
@@ -96,8 +99,19 @@ jobs:
       - name: Platform lint
         run: zsh test/lint_platform.zsh
 
+      # Under a virtual display, so the Linux clipboard branch runs instead of
+      # skipping. xvfb was installed for this and then never started: nothing
+      # set DISPLAY, so _mo_clip_tool correctly found no display and every
+      # clipboard assertion skipped while the step claimed to cover them. That
+      # branch is where the upstream bug lived — lib/clip.zsh was sourced by
+      # nothing, so clip/fp/flog reached no clipboard on Linux either.
       - name: Unit suite
-        run: zsh test/run.zsh
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a zsh test/run.zsh
+          else
+            zsh test/run.zsh
+          fi
 
   e2e:
     name: e2e install/uninstall (${{ matrix.os }})
@@ -118,7 +132,13 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then
             sudo apt-get update -qq
-            sudo apt-get install -y -qq zsh bc trash-cli zstd xz-utils unzip zip util-linux
+            # xvfb and xclip so the sweep's clipboard check runs under a
+            # display rather than skipping; mandb for the same reason the unit
+            # job builds it — apt leaves the index rebuilding in the background
+            # and `man -k .` finds nothing while it does.
+            sudo apt-get install -y -qq zsh bc trash-cli zstd xz-utils unzip zip util-linux \
+              xvfb xclip
+            sudo mandb -q 2>/dev/null || true
           fi
 
       - name: Install oh-my-zsh
@@ -130,4 +150,9 @@ jobs:
       # interactive login shell, then uninstalls and checks the dotfiles came
       # back. This is the only test that can see a lib nothing sources.
       - name: End-to-end
-        run: bash test/e2e/run.sh
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            xvfb-run -a bash test/e2e/run.sh
+          else
+            bash test/e2e/run.sh
+          fi

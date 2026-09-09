@@ -68,7 +68,7 @@ if _mo_clip_tool >/dev/null 2>&1; then
 	[[ -n "$_saved_clipboard" ]] && _mo_clip "$_saved_clipboard"
 	unset _saved_clipboard
 else
-	print -r -- "  skip   clip roundtrip (no clipboard tool)"
+	t_skip "clip roundtrip" "no clipboard tool"
 fi
 
 # -- sed ------------------------------------------------------------------------
