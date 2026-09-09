@@ -29,6 +29,7 @@ readonly ZSHRC_SNAPSHOT="${CONF_DIR}/zshrc.snapshot"
 # install.sh runs under bash before any zsh is sourced, so it cannot use
 # omz-custom/lib/platform.zsh. The few primitives it needs are mirrored here;
 # keep the two in step.
+# platform-lint: allow — this IS the platform detection.
 case "$(uname -s)" in
 	Linux)  MO_PLATFORM=linux ;;
 	Darwin) MO_PLATFORM=macos ;;
@@ -43,11 +44,13 @@ _mo_is_macos() { [[ "$MO_PLATFORM" == macos ]]; }
 # -i, BSD sed requires one.
 _mo_stat_mode() {
 	if _mo_is_macos; then stat -f '%OLp' "$1" 2>/dev/null
+	# platform-lint: allow — the Linux half of _mo_stat_mode.
 	else                  stat -c '%a'   "$1" 2>/dev/null
 	fi
 }
 
 _mo_sed_inplace() {
+	# platform-lint: allow — this IS _mo_sed_inplace.
 	if _mo_is_macos; then sed -i '' "$1" "$2"
 	else                  sed -i    "$1" "$2"
 	fi
@@ -76,6 +79,7 @@ _mo_brew_formula() {
 		procps|bc|coreutils|less|curl)         echo "@builtin" ;;
 		tar|unzip|zip|gzip|bzip2|git)          echo "@builtin" ;;
 		# Solved differently on macOS.
+		# platform-lint: allow — this is the package-name map itself.
 		wl-clipboard|xclip|xsel)               echo "@none:macOS uses pbcopy/pbpaste — no install needed" ;;
 		xdg-utils)                             echo "@none:macOS uses open(1) — no install needed" ;;
 		iproute2)                              echo "@none:macOS has no ip(8); ifconfig and netstat cover it" ;;
@@ -87,6 +91,7 @@ _mo_brew_formula() {
 # Install command for one or more packages, phrased for this platform.
 _mo_pkg_hint() {
 	if ! _mo_is_macos; then
+		# platform-lint: allow — the Linux half of _mo_pkg_hint.
 		echo "sudo apt install $*"
 		return
 	fi
@@ -485,6 +490,7 @@ _SCRIPT_SOURCE="${BASH_SOURCE[0]:-}"
 _running_via_pipe()
 {
 	case "${_SCRIPT_SOURCE}" in
+		# platform-lint: allow — matching the shapes a pipe gives $0, not reading /proc.
 		""|bash|/dev/stdin|/dev/fd/*|/proc/self/fd/*) return 0 ;;
 	esac
 	return 1
@@ -799,6 +805,7 @@ if [[ "$MO_UNINSTALL" == true ]]; then
 			if _mo_is_macos; then
 				sudo launchctl kickstart -k system/com.openssh.sshd 2>/dev/null || true
 			else
+				# platform-lint: allow — Linux half of the branch above.
 				sudo systemctl reload ssh 2>/dev/null || sudo systemctl reload sshd 2>/dev/null || true
 			fi
 			success "Removed sshd AcceptEnv drop-in"
@@ -843,6 +850,7 @@ fi
 
 case "$MO_PLATFORM" in
 	linux) success "Linux detected" ;;
+	# platform-lint: allow — reporting the detected platform.
 	macos) success "macOS detected ($(uname -m))" ;;
 	*)     die "Unsupported platform: $(uname -s). master-oogway supports Linux and macOS." ;;
 esac
@@ -864,6 +872,7 @@ if ! grep -qiE '^en_US\.(utf-?8|UTF-8)$' <<< "$_mo_locales"; then
 		# database is genuinely unusual, so there is nothing to generate.
 		warn "en_US.UTF-8 not reported by locale -a — unusual on macOS; check your terminal's locale settings"
 	else
+		# platform-lint: allow — instructions printed only on the Linux branch.
 		todo_item "Set up locale (run these commands, then open a new terminal):
 	  sudo apt install -y locales
 	  sudo sed -i 's/^# *en_US.UTF-8/en_US.UTF-8/' /etc/locale.gen

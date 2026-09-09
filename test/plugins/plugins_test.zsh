@@ -89,6 +89,16 @@ fi
 assert_contains "$(_mo_t mo-colorize-override 'alias grep')" "--color=auto" "grep is colorized"
 
 # ── no plugin may hardcode a package manager ─────────────────────────────────
-assert_eq "" "$(command grep -rln 'sudo apt install' $MO_ROOT/omz-custom/plugins/mo-*/ 2>/dev/null \
-	| xargs -I{} sh -c 'command grep -q "platform-lint:" {} || echo {}')" \
-	"no plugin hardcodes apt outside a declared Linux-only file"
+# The exemption is per LINE, not per file. Testing whether the file mentions
+# "platform-lint:" anywhere exempted the whole of lan_scan.sh the moment it
+# gained its first waiver, so its `sudo apt install nmap` stopped being
+# checked — this assertion passed vacuously.
+assert_eq "" "$(command grep -rn 'sudo apt install' $MO_ROOT/omz-custom/plugins/mo-*/ 2>/dev/null \
+	| while IFS=: read -r file line _; do
+		# Waived on the line itself or within the three lines above it, the
+		# same window test/lint_platform.zsh uses.
+		start=$(( line > 3 ? line - 3 : 1 ))
+		command sed -n "${start},${line}p" "$file" 2>/dev/null \
+			| command grep -q 'platform-lint: allow' || print -r -- "${file}:${line}"
+	done)" \
+	"no plugin hardcodes apt outside a line-level waiver"

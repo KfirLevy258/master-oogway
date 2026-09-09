@@ -21,7 +21,7 @@
 # clobbered by the sweep.
 #
 # Usage:  bash test/e2e/run.sh
-set -euo pipefail
+set -Eeuo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 OMZ="${ZSH:-$HOME/.oh-my-zsh}"

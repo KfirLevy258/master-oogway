@@ -17,6 +17,18 @@ typeset -gA _MO_EXTRACT_HINTS=(
 # The 7-Zip CLI is named 7zz by Homebrew's sevenzip, 7z by Debian's p7zip-full,
 # and 7za by some others. Likewise .rar: Homebrew dropped the unrar formula, so
 # unar is the reachable free extractor.
+# extract learned 7z/7zz/7za; compress hardcoded 7z, so the very package the
+# hint recommends (Homebrew sevenzip, whose binary is 7zz) could not satisfy it.
+_mo_compress_7z() {
+	local archive="$1"; shift
+	local bin
+	for bin in 7z 7zz 7za; do
+		command -v "$bin" &>/dev/null && { command "$bin" a "$archive" "$@"; return }
+	done
+	echo "compress: no 7-Zip binary found (try: $(_mo_pkg_hint p7zip-full))" >&2
+	return 1
+}
+
 _mo_extract_7z() {
 	local bin
 	for bin in 7z 7zz 7za; do
@@ -277,8 +289,7 @@ EOF
 						&& tar cf  "$archive" "${sources[@]}" ;;
 		*.zip)      _mo_compress_check zip  \
 						&& zip -r  "$archive" "${sources[@]}" ;;
-		*.7z)       _mo_compress_check 7z   \
-						&& 7z a    "$archive" "${sources[@]}" ;;
+		*.7z)       _mo_compress_7z "$archive" "${sources[@]}" ;;
 		*)
 			echo "compress: unknown format for '$archive'" >&2
 			echo "  Supported: .tar.zst .tar.gz .tar.bz2 .tar.xz .tar .zip .7z" >&2

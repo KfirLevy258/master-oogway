@@ -36,12 +36,14 @@ _dragon_render_preview() {
 			add-zsh-hook()    { :; }
 			[[ '${ssh_mode}' != true ]] && unset SSH_TTY SSH_CONNECTION SSH_CLIENT
 			HOME='${HOME}'
-			# builtin cd, not an assignment: setting PWD does not chdir, so
-			# %~ rendered the real working directory and every preset preview
-			# (and the whole --gallery) showed wherever the user happened to
-			# be instead of the demo path.
-			builtin cd -q '/' 2>/dev/null
-			PWD='/home/${USER}/projects/myapp/src/components'
+			# Assigning PWD does not chdir, so %~ rendered the real working
+			# directory and every preview — and the whole --gallery — showed
+			# wherever the user happened to be. cd into a throwaway tree that
+			# mirrors the demo path under a fake HOME, so %~ abbreviates it to
+			# ~/projects/myapp/src/components as intended.
+			_demo=\${TMPDIR:-/tmp}/.dragon-preview-\$\$/projects/myapp/src/components
+			command mkdir -p "\$_demo" 2>/dev/null && builtin cd -q "\$_demo" 2>/dev/null
+			HOME=\${TMPDIR:-/tmp}/.dragon-preview-\$\$
 			VCS_STATUS_RESULT='ok-sync'
 			VCS_STATUS_LOCAL_BRANCH='main'
 			VCS_STATUS_HAS_UNSTAGED=\${VCS_STATUS_HAS_UNSTAGED:-0}

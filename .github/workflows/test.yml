@@ -59,8 +59,14 @@ jobs:
         # that depend on 4.x are absent rather than pretending to test it.
         run: |
           set -eu
-          # bash 4 only.
-          ! grep -q 'declare -A' install.sh
+          # bash 4 only. Written with an explicit exit, not `! grep`: `set -e`
+          # exempts any command whose status is inverted with !, so the negated
+          # form silently never fails.
+          if grep -q 'declare -A' install.sh; then
+            echo "declare -A requires bash 4; macOS ships 3.2" >&2
+            grep -n 'declare -A' install.sh >&2
+            exit 1
+          fi
           # An empty array expanded as "${a[@]}" is an unbound-variable error
           # under `set -u` in bash 3.2. The safe form is ${a[@]+"${a[@]}"} —
           # which contains the unsafe text, so strip guarded lines and

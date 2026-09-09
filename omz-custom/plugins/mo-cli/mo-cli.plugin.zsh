@@ -1,17 +1,17 @@
 
 _MO_INSTALL_DIR="${HOME}/.master-oogway"
 
-# True when git's configured diff.tool will actually show a diff here.
-# git's default on macOS is opendiff, which is a GUI (FileMerge) and needs full
-# Xcode — so "diff.tool is set" was not the right question: it turned
-# `diff-zshrc` into an app launch, or a "Launch 'opendiff' [Y/n]?" prompt with
-# exit 1 when nothing was there to answer it.
+# Delegates to mo-git's _mo_difftool_usable when that plugin is loaded, so the
+# two commands cannot disagree about the same tool. Falls back to a name check
+# when mo-git is disabled.
 _mo_cli_difftool_usable() {
 	local tool="$1"
 	[[ -n "$tool" ]] || return 1
+	if (( ${+functions[_mo_difftool_usable]} )); then
+		_mo_difftool_usable "$tool"
+		return
+	fi
 	case "$tool" in
-		# Known GUI tools: fine when a human is watching, wrong for a command
-		# whose whole job is to print a diff into the terminal.
 		opendiff|kaleidoscope|araxis|bc|bc3|diffmerge|ecmerge|p4merge|smerge|meld|kdiff3|tkdiff|winmerge|vscode|code)
 			return 1 ;;
 	esac

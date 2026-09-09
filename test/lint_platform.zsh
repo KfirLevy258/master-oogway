@@ -47,7 +47,17 @@ typeset -a banned=(
 	'\bpts\b'              # Linux tty naming; macOS uses ttysNNN
 )
 
-for f in "$MO_ROOT"/omz-custom/plugins/mo-*/**/*(.N) "$MO_ROOT"/omz-custom/themes/**/*(.N); do
+# install.sh, lib/ and the zshrc were outside the glob, so the chmod
+# --reference / stat -c / sed -i rules — added precisely because install.sh had
+# those defects — never actually scanned the file they were written for.
+for f in \
+	"$MO_ROOT"/omz-custom/plugins/mo-*/**/*(.N) \
+	"$MO_ROOT"/omz-custom/themes/**/*(.N) \
+	"$MO_ROOT"/omz-custom/lib/*(.N) \
+	"$MO_ROOT"/install.sh(.N) \
+	"$MO_ROOT"/zshrc.master-oogway(.N) \
+	"$MO_ROOT"/zshenv.master-oogway(.N) \
+; do
 	[[ "$f" == *.md  ]] && continue
 	[[ "$f" == *.zwc ]] && continue   # compiled bytecode, not source
 	[[ "$f" == */lib/platform.zsh ]] && continue

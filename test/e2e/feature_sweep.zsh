@@ -158,8 +158,11 @@ if [[ -n "$(_mo_trash_tool 2>/dev/null)" ]]; then
     skip "rm -h shows the bypass" "trash-cli owns rm on Linux"
   fi
   print -- bye > "$SB/e2e-bypass-$$.txt"
-  check "\\rm really deletes" "gone"      "cd $SB && \\rm e2e-bypass-$$.txt; [[ -e \$HOME/.Trash/e2e-bypass-$$.txt ]] && print TRASHED || print gone"
-  command rm -f "$HOME/.Trash/e2e-trash-$$.txt" 2>/dev/null
+  # ~$USER, not $HOME: /usr/bin/trash writes to the real user's Trash
+  # regardless of $HOME, and under the e2e $HOME is the throwaway dir — so
+  # this assertion could never fail and the cleanup below missed its target.
+  check "\\rm really deletes" "gone"      "cd $SB && \\rm e2e-bypass-$$.txt; [[ -e $(eval echo ~$USER)/.Trash/e2e-bypass-$$.txt ]] && print TRASHED || print gone"
+  command rm -f "$(eval echo ~$USER)/.Trash/e2e-trash-$$.txt" 2>/dev/null
 else skip "mo-trash" "no trash tool"; fi
 
 print -r -- "\n\e[1m── mo-welcome ──\e[0m"

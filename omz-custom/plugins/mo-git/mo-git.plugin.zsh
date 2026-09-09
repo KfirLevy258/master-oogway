@@ -13,19 +13,29 @@ gd() {
 	# project's own gitconfig sets meld, which has no macOS build by default.
 	local tool
 	tool=$(git config --get diff.tool 2>/dev/null)
-	if [[ -n "$tool" ]] && _mo_git_difftool_usable "$tool"; then
+	if [[ -n "$tool" ]] && _mo_difftool_usable "$tool"; then
 		git difftool -y "$@"
 	else
 		git diff "$@"
 	fi
 }
 
-_mo_git_difftool_usable() {
+# Shared by mo-git's `gd` and mo-cli's `diff-zshrc`. They used to carry two
+# helpers that disagreed: mo-cli treated meld as unusable (it is a GUI) while
+# mo-git accepted it, so with meld installed — which gitconfig.master-oogway
+# configures — `gd` launched the GUI and `diff-zshrc` refused it.
+_mo_difftool_usable() {
 	local tool="$1" cmd
 	# A custom cmd wins over the tool name.
 	cmd=$(git config --get "difftool.${tool}.cmd" 2>/dev/null)
 	[[ -n "$cmd" ]] && tool="${${(z)cmd}[1]}"
 	command -v "$tool" &>/dev/null || return 1
+	# Known GUI tools: fine when a human is watching, wrong for a command whose
+	# job is to print a diff into the terminal.
+	case "$tool" in
+		opendiff|kaleidoscope|araxis|bc|bc3|diffmerge|ecmerge|p4merge|smerge|meld|kdiff3|tkdiff|winmerge|vscode|code)
+			[[ -t 1 ]] && return 1 ;;
+	esac
 	# opendiff exists as an xcrun shim even without Xcode, and only fails when
 	# invoked; ask xcode-select instead of trusting the shim.
 	if [[ "$tool" == opendiff ]]; then

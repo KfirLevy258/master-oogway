@@ -86,9 +86,13 @@ _mo_trash_names() {
 			[[ -e "${MO_TRASH_DIR}/${n}" ]] || continue   # emptied since
 			(( ${+seen[$n]} )) && continue
 			seen[$n]=1
-			out=("$n" "${out[@]}")                        # index is oldest-first
+			out+=("$n")
 		done < "$MO_TRASH_INDEX"
 	fi
+
+	# Reverse once at the end. Prepending inside the loop rebuilt the array on
+	# every entry — quadratic, and over a second at a few thousand entries.
+	(( ${#out} )) && out=( ${(Oa)out} )                # index is oldest-first
 
 	if _mo_trash_dir_readable "$MO_TRASH_DIR"; then
 		local f

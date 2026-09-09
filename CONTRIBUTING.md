@@ -434,12 +434,27 @@ Do not add a `[[ $(uname) == Darwin ]]` branch inside a plugin. Spreading the
 decision across 22 plugins is what makes a codebase hard to port; one file with
 two branches keeps each plugin readable and makes a third platform one file.
 
-A file that is genuinely platform-bound may opt out by declaring why:
+Code that is genuinely platform-bound may opt out by declaring why. Prefer the
+**per-line** form — it goes on the offending line, or within the three lines
+above it, and requires a reason:
 
 ```zsh
-# platform-lint: linux-only — lan-ssh needs cron and sshd_config.d.
+# platform-lint: allow — Linux half of the _mo_is_macos branch above.
+sudo systemctl reload ssh 2>/dev/null || true
+```
+
+The whole-file form survives for `optional-deps.zsh`, which names Debian
+packages on purpose:
+
+```zsh
 # platform-lint: metadata — names Linux package names for the installer.
 ```
+
+A file-level waiver hides every *later* addition to that file too. That is how
+`mo-cli` accumulated unnoticed Linux-isms while it carried a `linux-only`
+waiver for lan-ssh: once the waiver was there, nothing in the file was checked
+again. The `linux-only` form has been removed for that reason — use a per-line
+`allow` with a reason instead.
 
 `install.sh` runs under bash before any zsh is sourced, so it mirrors the few
 primitives it needs. Keep it **bash 3.2 compatible** — macOS ships bash 3.2 as
