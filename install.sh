@@ -460,13 +460,21 @@ _report_optional_deps()
 	done
 
 	echo ""
+	# "block" is a misnomer by the time this runs. The only caller is at the
+	# very bottom of the script, so every dotfile has already been linked and
+	# there is nothing left to prevent. It used to print "Or skip them and
+	# install without the recommended packages", which reads as though nothing
+	# had been installed, and then `exit 1` — reporting failure for an install
+	# that had in fact succeeded, so `install.sh && something` never ran the
+	# something. Both are now dropped; what differs from "warn" is only the
+	# note about silencing this report.
 	if [[ "$mode" == "block" ]]; then
-		echo -e "  These packages are optional but recommended for the best experience."
-		echo -e "  Install them alongside master-oogway:"
+		echo -e "  master-oogway is installed. These packages are optional, but"
+		echo -e "  recommended for the best experience:"
 		echo ""
 		echo -e "    ${COLOR_CYAN}$(_mo_pkg_hint ${unique_pkgs[@]+"${unique_pkgs[@]}"})${COLOR_RESET}"
 		echo ""
-		echo -e "  Or skip them and install without the recommended packages:"
+		echo -e "  To skip this report on future runs:"
 		echo ""
 		if _running_via_pipe; then
 			echo -e "    ${COLOR_CYAN}~/.master-oogway/install.sh --no-recommended-packages${COLOR_RESET}"
@@ -474,7 +482,6 @@ _report_optional_deps()
 			echo -e "    ${COLOR_CYAN}./install.sh --no-recommended-packages${COLOR_RESET}"
 		fi
 		echo ""
-		exit 1
 	else
 		echo -e "  Install recommended packages for the best experience:"
 		echo ""

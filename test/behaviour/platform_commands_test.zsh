@@ -140,6 +140,18 @@ assert_eq "hx /tmp/x:42" "$_got" "EDITOR_LINENO_FMT substitutes both placeholder
 # `[[ -r /dev/tty ]]` only stats the device node, mode 666, so it passes with no
 # controlling terminal; the read then failed and, under set -e, killed the
 # install AFTER ~/.zshrc and ~/.zshenv had already been replaced.
+# The optional-package report runs at the very bottom of install.sh, after every
+# dotfile is linked, so it cannot block anything. It used to `exit 1` there —
+# reporting failure for an install that had succeeded, so `install.sh && x` never
+# ran x — while printing text that read as though nothing had been installed.
+local _report_fn
+_report_fn=$(awk '/^_report_optional_deps\(\)/,/^}$/' "$MO_ROOT/install.sh" \
+	| command grep -v '^[[:space:]]*#')
+assert_not_contains "$_report_fn" "exit 1" \
+	"the optional-package report does not fail a completed install"
+assert_not_contains "$_report_fn" "install without the recommended" \
+	"the report does not imply the install was skipped"
+
 local _inst="$MO_ROOT/install.sh"
 local _gitcfg_fn
 # Comment lines are stripped, as lint_platform.zsh does: the comment explaining
