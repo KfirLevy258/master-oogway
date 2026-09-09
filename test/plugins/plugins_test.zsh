@@ -70,6 +70,64 @@ command rm -rf "$td"
 }
 assert_contains "$(_mo_t mo-git 'alias gs')" "git status" "git aliases load"
 
+# ── difftool predicates ──────────────────────────────────────────────────────
+# `gd` asks only "can it run"; diff-zshrc also asks "is it a GUI". They were one
+# predicate with an `[[ -t 1 ]] && return 1` clause meant to serve both, which
+# let a GUI through whenever stdout was NOT a terminal — so a piped `gd` opened
+# FileMerge and hung. Every assertion below captures output, so stdout is a pipe
+# here, which is exactly the condition that used to fail.
+_mo_dt() {
+	zsh -c "
+		setopt EXTENDED_GLOB
+		export ZSH_CUSTOM='$MO_ROOT/omz-custom'
+		for f in '$MO_ROOT'/omz-custom/lib/*.zsh(#qN); do source \$f; done
+		source '$MO_ROOT/omz-custom/plugins/mo-git/mo-git.plugin.zsh' 2>/dev/null
+		source '$MO_ROOT/omz-custom/plugins/mo-cli/mo-cli.plugin.zsh' 2>/dev/null
+		$*
+	" >/dev/null 2>&1
+}
+assert_ok   "opendiff is a GUI"          _mo_dt '_mo_difftool_is_gui opendiff'
+assert_ok   "meld is a GUI"              _mo_dt '_mo_difftool_is_gui meld'
+assert_fail "vimdiff is not a GUI"       _mo_dt '_mo_difftool_is_gui vimdiff'
+assert_fail "a missing tool is unusable" _mo_dt '_mo_difftool_usable mo-no-such-difftool'
+assert_ok   "an installed tool is usable" _mo_dt '_mo_difftool_usable diff'
+# The regression itself. A stub on PATH, not the real thing: asking about a tool
+# this machine does not have is a vacuous test, since it is then refused for
+# being absent no matter what the GUI logic does — which is exactly how the bug
+# survived a green suite on a Mac without full Xcode. With the stub the tool IS
+# runnable, so only the GUI rule can reject it.
+# PATH is set around the calls, not with `env`: _mo_dt is a shell function, and
+# env can only exec a binary — it failed, assert_fail saw a failing command and
+# called that a pass. The paired assert_ok below exists to prove the stub really
+# is on PATH, so the refusal above it cannot pass for the wrong reason.
+_MO_DT_BIN=$(mktemp -d)
+printf '#!/bin/sh\nexit 0\n' > "$_MO_DT_BIN/meld"; chmod +x "$_MO_DT_BIN/meld"
+_MO_DT_PATH="$PATH"; PATH="$_MO_DT_BIN:$PATH"
+assert_ok   "a stubbed GUI tool is runnable"       _mo_dt '_mo_difftool_usable meld'
+assert_fail "diff-zshrc refuses a runnable GUI tool" _mo_dt '_mo_cli_difftool_usable meld'
+PATH="$_MO_DT_PATH"
+command rm -rf "$_MO_DT_BIN"
+# difftool.<tool>.cmd decides which binary actually runs, so the GUI check must
+# follow it: the shipped gitconfig sets `difftool.meld.cmd = meld "$LOCAL" ...`.
+# Written from here rather than inside _mo_dt — the config text survives two
+# layers of zsh -c quoting far less well than an environment variable does.
+_MO_DT_CFG=$(mktemp)
+printf '[difftool "x"]\n\tcmd = meld $LOCAL $REMOTE\n' > "$_MO_DT_CFG"
+export GIT_CONFIG_GLOBAL="$_MO_DT_CFG" GIT_CONFIG_NOSYSTEM=1
+assert_ok "a cmd pointing at a GUI is a GUI" _mo_dt '_mo_difftool_is_gui x'
+unset GIT_CONFIG_GLOBAL GIT_CONFIG_NOSYSTEM
+command rm -f "$_MO_DT_CFG"
+
+# mo-cli keeps its own copy of the GUI list for when mo-git is disabled, and the
+# two copies disagreeing is the original bug: mo-cli called meld a GUI, mo-git
+# did not, so `gd` opened it and diff-zshrc refused it. Assert they stay equal.
+_MO_GUI_GIT=$(command grep -o 'opendiff|[a-z0-9|]*' \
+	"$MO_ROOT/omz-custom/plugins/mo-git/mo-git.plugin.zsh" | head -1)
+_MO_GUI_CLI=$(command grep -o 'opendiff|[a-z0-9|]*' \
+	"$MO_ROOT/omz-custom/plugins/mo-cli/mo-cli.plugin.zsh" | head -1)
+assert_contains "$_MO_GUI_GIT" "meld" "the GUI list was actually found"
+assert_eq "$_MO_GUI_GIT" "$_MO_GUI_CLI" "mo-git and mo-cli agree on which tools are GUIs"
+
 # ── platform-specific expectations ───────────────────────────────────────────
 if _mo_is_macos; then
 	assert_eq "" "$(_mo_t mo-colorize-override 'alias ip 2>/dev/null')" \

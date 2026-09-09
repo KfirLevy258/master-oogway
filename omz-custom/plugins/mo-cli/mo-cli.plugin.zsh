@@ -1,14 +1,17 @@
 
 _MO_INSTALL_DIR="${HOME}/.master-oogway"
 
-# Delegates to mo-git's _mo_difftool_usable when that plugin is loaded, so the
-# two commands cannot disagree about the same tool. Falls back to a name check
-# when mo-git is disabled.
+# diff-zshrc needs a tool that both runs AND writes to the terminal, so it asks
+# mo-git's two predicates together. `gd` asks only the first: a GUI is a fine
+# answer there, and refusing one would break meld for the Linux users the
+# shipped gitconfig set it up for. Falls back to a name check when mo-git is
+# disabled — that list must stay in step with _mo_difftool_is_gui, which the
+# unit suite asserts.
 _mo_cli_difftool_usable() {
 	local tool="$1"
 	[[ -n "$tool" ]] || return 1
 	if (( ${+functions[_mo_difftool_usable]} )); then
-		_mo_difftool_usable "$tool"
+		_mo_difftool_usable "$tool" && ! _mo_difftool_is_gui "$tool"
 		return
 	fi
 	case "$tool" in

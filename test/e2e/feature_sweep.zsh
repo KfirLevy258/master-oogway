@@ -20,10 +20,23 @@ typeset -ga FAILED=()
 # lacking one optional tool a large share of the suite fails for a reason that
 # has nothing to do with what is being tested. Dropping just those lines keeps
 # real stderr — the error messages several checks assert on — intact.
+#
+# Output goes through a temp file rather than straight into the caller's $(...).
+# The alarm kills the shell it started, but not that shell's children: `gd` with
+# a GUI difftool configured left FileMerge running, and the orphan held the write
+# end of the capture pipe, so the substitution kept blocking long after the shell
+# was dead. That turned a 15-second bound into a 15-minute CI hang. An orphan
+# that inherits a temp file blocks nobody.
 _t() {
+	local _out _rc
+	_out=$(mktemp)
 	perl -e 'alarm shift; exec @ARGV' "$1" \
 		env MO_WELCOME_FIELDS= ZSH_DISABLE_COMPFIX=true TERM="${TERM:-xterm-256color}" \
-		"${@:2}" 2>&1
+		"${@:2}" >"$_out" 2>&1
+	_rc=$?
+	command cat "$_out"
+	command rm -f "$_out"
+	return $_rc
 }
 
 # Drop shell-startup noise from a captured string.
@@ -148,7 +161,10 @@ check "git aliases load"  "git status" 'alias gs'
 check "glc graph log"     "two"        "cd $SB/r && glc | head -1"
 check "gsum"              "branch"     "cd $SB/r && gsum"
 checkrc "gsum rc=0 clean" 0            "cd $SB/r && gsum"
-check "gd falls back to git diff" "diff --git" "cd $SB/r && git config diff.tool opendiff && gd HEAD~1 HEAD"
+# NOT opendiff: on a Mac with full Xcode that tool is genuinely usable, so `gd`
+# correctly launches FileMerge — which on a CI runner is a window nobody closes.
+# This asserts the fallback, so it needs a tool that cannot run anywhere.
+check "gd falls back to git diff" "diff --git" "cd $SB/r && git config diff.tool mo-no-such-difftool && gd HEAD~1 HEAD"
 check "groot"             "/r"         "cd $SB/r && mkdir -p a/b && cd a/b && groot && pwd"
 checkrc "flog outside repo rc=1" 1     'cd /tmp && flog'
 
