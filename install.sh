@@ -55,16 +55,31 @@ _mo_sed_inplace() {
 
 # Debian package name -> Homebrew equivalent, where they differ. A case rather
 # than an associative array: macOS ships bash 3.2, which has none.
+# Kept in step with _MO_PKG_MACOS in omz-custom/lib/platform.zsh — this script
+# runs under bash before any zsh is sourced, so it cannot read that map.
+#
+# @builtin  macOS ships this exact tool.
+# @none:M   macOS solves the same problem another way, so neither the Debian
+#           name nor any formula is right. These used to answer @builtin, which
+#           told the user that xclip or iproute2 "ships with macOS — check your
+#           PATH" and sent them hunting for something that cannot exist there.
 _mo_brew_formula() {
 	case "$1" in
 		build-essential)                       echo "@xcode"   ;;
 		texlive-xetex)                         echo "@cask:basictex" ;;
-		trash-cli)                             echo "trash"    ;;
+		meld)                                  echo "@cask:meld" ;;
 		fd-find)                               echo "fd"       ;;
 		p7zip-full)                            echo "sevenzip" ;;
 		xz-utils)                              echo "xz"       ;;
-		wl-clipboard|xclip|xsel)               echo "@builtin" ;;
-		procps|iproute2|xdg-utils|bc|coreutils) echo "@builtin" ;;
+		unrar)                                 echo "unar"     ;;
+		# Ship with macOS.
+		procps|bc|coreutils|less|curl)         echo "@builtin" ;;
+		tar|unzip|zip|gzip|bzip2|git)          echo "@builtin" ;;
+		# Solved differently on macOS.
+		wl-clipboard|xclip|xsel)               echo "@none:macOS uses pbcopy/pbpaste — no install needed" ;;
+		xdg-utils)                             echo "@none:macOS uses open(1) — no install needed" ;;
+		iproute2)                              echo "@none:macOS has no ip(8); ifconfig and netstat cover it" ;;
+		trash-cli)                             echo "@none:macOS ships /usr/bin/trash — no install needed" ;;
 		*)                                     echo "$1"       ;;
 	esac
 }
@@ -76,12 +91,16 @@ _mo_pkg_hint() {
 		return
 	fi
 	local pkg mapped
-	local formulae="" casks=""
+	local formulae="" casks="" notes=""
 	for pkg in "$@"; do
 		mapped="$(_mo_brew_formula "$pkg")"
 		case "$mapped" in
-			@xcode)   echo "xcode-select --install"; return ;;
-			@builtin) continue ;;
+			# No early return: it dropped every package after the first
+			# non-formula, so `_mo_pkg_hint build-essential fzf` never
+			# mentioned fzf.
+			@xcode)   notes="${notes}${notes:+; }xcode-select --install" ;;
+			@builtin) notes="${notes}${notes:+; }${pkg} ships with macOS — check your PATH" ;;
+			@none:*)  notes="${notes}${notes:+; }${mapped#@none:}" ;;
 			@cask:*)  casks="${casks}${casks:+ }${mapped#@cask:}" ;;
 			*)        formulae="${formulae}${formulae:+ }${mapped}" ;;
 		esac
@@ -90,7 +109,11 @@ _mo_pkg_hint() {
 	local out=""
 	[[ -n "$formulae" ]] && out="brew install ${formulae}"
 	[[ -n "$casks"    ]] && out="${out}${out:+ && }brew install --cask ${casks}"
-	[[ -n "$out"      ]] && echo "$out"
+	[[ -n "$notes"    ]] && out="${out}${out:+; }${notes}"
+	# Always succeed: an empty hint returned 1 here, and under the ERR trap
+	# that turned a package that needs no install into a scary [ERR] line.
+	printf '%s\n' "$out"
+	return 0
 }
 
 # -- Colors & logging -----------------------------------------------------------
@@ -209,6 +232,8 @@ _mo_backup()
 	[[ -f "$src" ]] || return 0
 	local backup="${src}.pre-master-oogway.$(date +%Y%m%d_%H%M%S)"
 	cp "$src" "$backup"
+	# The single place a backup is announced. Three call sites used to repeat
+	# this line right after calling us, so every migration logged it twice.
 	info "Backed up ${src} → ${backup}" >&2
 	echo "$backup"
 }
@@ -289,7 +314,6 @@ _mo_migrate_to_symlink()
 	if [[ -e "$home_path" || -L "$home_path" ]] && ! _mo_is_managed_symlink "$home_path"; then
 		local backup
 		backup=$(_mo_backup "$home_path")
-		[[ -n "$backup" ]] && info "Backed up ${home_path} → ${backup}"
 	fi
 
 	ln -sfn "$real_path" "$home_path"
@@ -876,7 +900,6 @@ _install_zshrc()
 	if [[ ! -e "${ZSHRC_REAL}" ]] || [[ "${MO_FORCE}" == true ]]; then
 		local backup
 		backup=$(_mo_backup "${ZSHRC_REAL}")
-		[[ -n "$backup" ]] && info "Backed up ${ZSHRC_REAL} → ${backup}"
 		copy_file "${INSTALL_DIR}/zshrc.master-oogway" "${ZSHRC_REAL}"
 	fi
 	# Warn the user before their real ~/.zshrc is replaced with our symlink.
@@ -968,7 +991,6 @@ _install_editorconfig()
 	if [[ "${MO_FORCE}" == true ]]; then
 		local backup
 		backup=$(_mo_backup "${EDITORCONFIG_REAL}")
-		[[ -n "$backup" ]] && info "Backed up ${EDITORCONFIG_REAL} → ${backup}"
 		copy_file "$template" "${EDITORCONFIG_REAL}"
 	fi
 	_mo_migrate_to_symlink "${HOME}/.editorconfig" "${EDITORCONFIG_REAL}" "$template"
