@@ -38,6 +38,43 @@ esac
 
 _mo_is_macos() { [[ "$MO_PLATFORM" == macos ]]; }
 
+# How to get a Nerd Font on this platform. Not part of the recommended-package
+# list: a font is useless until the terminal is pointed at it, which no
+# installer can do for the user.
+_mo_pkg_hint_font()
+{
+	if _mo_is_macos; then
+		echo "brew install --cask font-jetbrains-mono-nerd-font"
+	else
+		echo "see https://github.com/ryanoasis/nerd-fonts, or your distro's fonts-* packages"
+	fi
+}
+
+# Is any Nerd Font installed? The theme defaults DRAGON__USE_NERD_FONT to true,
+# and when that assumption is wrong every powerline separator and segment icon
+# renders as a tofu box — which reads as a broken install rather than a missing
+# font. Checking costs one find; assuming costs the user a confusing prompt.
+# -print -quit stops at the first hit instead of walking the whole tree.
+_nerd_font_installed()
+{
+	local d
+	if _mo_is_macos; then
+		for d in "${HOME}/Library/Fonts" /Library/Fonts /System/Library/Fonts; do
+			[[ -d "$d" ]] || continue
+			[[ -n "$(find "$d" -iname '*nerd*font*' -print -quit 2>/dev/null)" ]] && return 0
+		done
+		return 1
+	fi
+	# platform-lint: allow — fontconfig is the Linux answer and this line is
+	# already inside the non-macOS branch; the macOS branch above returns first.
+	command -v fc-list &>/dev/null && fc-list 2>/dev/null | grep -qi nerd && return 0
+	for d in "${HOME}/.local/share/fonts" "${HOME}/.fonts" /usr/share/fonts; do
+		[[ -d "$d" ]] || continue
+		[[ -n "$(find "$d" -iname '*nerd*font*' -print -quit 2>/dev/null)" ]] && return 0
+	done
+	return 1
+}
+
 # Mirrors of the two lib/platform.zsh primitives this script needs. It runs
 # under bash before any zsh is sourced, so it cannot call them directly.
 # GNU stat takes -c %a, BSD stat takes -f %OLp; GNU sed refuses an argument to
@@ -1138,10 +1175,20 @@ _regen_theme_conf()
 		else
 			warn "dragon theme config could not be seeded"
 		fi
-		todo_item "Run 'dragon-configure' to customize your prompt. It also asks
-		  whether your terminal has a Nerd Font — the default assumes yes, so until
-		  you run it (or if you answer no) some segment icons may show as blank
-		  boxes or garbled characters."
+		if _nerd_font_installed; then
+			todo_item "Run 'dragon-configure' to customize your prompt. It also asks
+			  whether your terminal has a Nerd Font — the default assumes yes, so until
+			  you run it (or if you answer no) some segment icons may show as blank
+			  boxes or garbled characters."
+		else
+			todo_item "No Nerd Font found. The prompt defaults to Nerd Font icons, so
+			  separators and segment icons will render as boxes with a '?' until you
+			  install one AND select it in your terminal's settings:
+			    $(_mo_pkg_hint_font)
+			  Then set your terminal font to it. Alternatively run 'dragon-configure'
+			  and answer no to the Nerd Font question, which switches the prompt to
+			  plain-text separators."
+		fi
 		return
 	fi
 

@@ -140,6 +140,18 @@ assert_eq "hx /tmp/x:42" "$_got" "EDITOR_LINENO_FMT substitutes both placeholder
 # `[[ -r /dev/tty ]]` only stats the device node, mode 666, so it passes with no
 # controlling terminal; the read then failed and, under set -e, killed the
 # install AFTER ~/.zshrc and ~/.zshenv had already been replaced.
+# install.sh must look for a Nerd Font rather than assume one. The theme
+# defaults DRAGON__USE_NERD_FONT to true, so when the assumption is wrong every
+# separator and icon renders as a tofu box, which reads as a broken install.
+local _nf
+_nf=$(awk '/^_nerd_font_installed\(\)/,/^}$/' "$MO_ROOT/install.sh")
+assert_contains "$_nf" "nerd" "install.sh probes for a Nerd Font"
+# Both platforms, and the macOS branch must not lean on fc-list, which macOS
+# has no reason to ship.
+assert_contains "$_nf" "Library/Fonts"      "the macOS branch looks in the Library font dirs"
+assert_contains "$_nf" "fc-list"            "the Linux branch asks fontconfig"
+assert_contains "$_nf" ".local/share/fonts" "the Linux branch also looks on disk when fc-list is absent"
+
 # The optional-package report runs at the very bottom of install.sh, after every
 # dotfile is linked, so it cannot block anything. It used to `exit 1` there —
 # reporting failure for an install that had succeeded, so `install.sh && x` never
