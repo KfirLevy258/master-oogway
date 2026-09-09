@@ -128,6 +128,42 @@ _MO_GUI_CLI=$(command grep -o 'opendiff|[a-z0-9|]*' \
 assert_contains "$_MO_GUI_GIT" "meld" "the GUI list was actually found"
 assert_eq "$_MO_GUI_GIT" "$_MO_GUI_CLI" "mo-git and mo-cli agree on which tools are GUIs"
 
+# ── mo-eza-override: what actually reaches eza ───────────────────────────────
+# `ls` had no test of any kind, unit or e2e, despite carrying the workaround for
+# two upstream eza changes whose failure modes are both silent. 0.18 gave
+# --classify an optional value, so a bare -F swallows the path after it; 0.23
+# made eza read path names from stdin when stdin is not a TTY and no operand was
+# given, so in a script or a pipeline `ls` lists nothing, or blocks on a pipe
+# that never closes. Both are decided by the argument vector, so a stub eza that
+# records its arguments tests them on any machine, eza installed or not — and
+# the stub also satisfies requirements.zsh, which otherwise refuses to load the
+# plugin at all.
+_MO_EZA_BIN=$(mktemp -d)
+printf '#!/bin/sh\nprintf "%%s\\n" "$@" > "$MO_EZA_ARGS"\n' > "$_MO_EZA_BIN/eza"
+chmod +x "$_MO_EZA_BIN/eza"
+_mo_eza_args() {
+	local out; out=$(mktemp)
+	MO_EZA_ARGS="$out" PATH="$_MO_EZA_BIN:$PATH" zsh -c "
+		setopt EXTENDED_GLOB
+		export ZSH_CUSTOM='$MO_ROOT/omz-custom'
+		for f in '$MO_ROOT'/omz-custom/lib/*.zsh(#qN); do source \$f; done
+		source '$MO_ROOT/omz-custom/plugins/mo-eza-override/mo-eza-override.plugin.zsh'
+		_mo_eza_ls $1
+	" </dev/null >/dev/null 2>&1
+	command tr '\n' ' ' < "$out" | command sed 's/ $//'
+	command rm -f "$out"
+}
+# The stub must be reachable, or every assertion below compares "" with "" and
+# passes without testing anything.
+assert_contains "$(_mo_eza_args '')" "classify" "the eza stub is on PATH"
+assert_eq "--classify=auto ."            "$(_mo_eza_args '')"          "a bare ls passes an explicit operand"
+assert_eq "--classify=auto -l ."         "$(_mo_eza_args '-l')"        "flags alone still get an operand"
+assert_eq "--classify=auto somedir"      "$(_mo_eza_args 'somedir')"   "a path operand is not doubled"
+assert_eq "--classify=auto -L 1 ."       "$(_mo_eza_args '-L 1')"      "an option value is not mistaken for a path"
+assert_eq "--classify=auto --level=2 ."  "$(_mo_eza_args '--level=2')" "--opt=value carries its own value"
+assert_eq "--classify=auto -- x"         "$(_mo_eza_args '-- x')"      "an operand after -- counts as one"
+command rm -rf "$_MO_EZA_BIN"
+
 # ── platform-specific expectations ───────────────────────────────────────────
 if _mo_is_macos; then
 	assert_eq "" "$(_mo_t mo-colorize-override 'alias ip 2>/dev/null')" \
