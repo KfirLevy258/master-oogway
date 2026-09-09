@@ -132,6 +132,29 @@ local _fmt='hx %f:%l' _got
 _got="${_fmt//\%f//tmp/x}"; _got="${_got//\%l/42}"
 assert_eq "hx /tmp/x:42" "$_got" "EDITOR_LINENO_FMT substitutes both placeholders"
 
+# ── install.sh prompts for a git identity it may not be able to read ─────────
+# Structural, like the picker checks above: driving a real install to this point
+# costs an install. The bug was upstream's and pre-dates this branch — confirm()
+# was fixed in 0e768f5 ("detect controlling tty by opening /dev/tty, not -r")
+# and _install_gitconfig kept the check that commit had just declared wrong.
+# `[[ -r /dev/tty ]]` only stats the device node, mode 666, so it passes with no
+# controlling terminal; the read then failed and, under set -e, killed the
+# install AFTER ~/.zshrc and ~/.zshenv had already been replaced.
+local _inst="$MO_ROOT/install.sh"
+local _gitcfg_fn
+# Comment lines are stripped, as lint_platform.zsh does: the comment explaining
+# why the old check was wrong quotes it verbatim, and matched this assertion.
+_gitcfg_fn=$(awk '/^_install_gitconfig\(\)/,/^}$/' "$_inst" | command grep -v '^[[:space:]]*#')
+assert_not_contains "$_gitcfg_fn" '[[ -r /dev/tty ]]' \
+	"the identity prompt does not gate on -r /dev/tty"
+assert_contains "$_gitcfg_fn" '{ : < /dev/tty; }' \
+	"the identity prompt probes the tty by opening it"
+# Both reads must handle EOF; a bare `read` aborts the run on Ctrl-D.
+assert_eq "2" "$(print -r -- "$_gitcfg_fn" | command grep -c 'read -r git_.* || _die_no_git_identity')" \
+	"both identity reads handle a closed input"
+assert_contains "$(command cat "$_inst")" "_die_no_git_identity()" \
+	"the refusal is defined in one place"
+
 # ── the package hints must not make claims that are false on macOS ───────────
 if _mo_is_macos; then
 	assert_not_contains "$(_mo_pkg_hint xclip)"    "check your PATH" "xclip hint does not claim macOS ships it"

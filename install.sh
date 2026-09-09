@@ -1017,6 +1017,14 @@ _install_editorconfig
 # ~/.gitconfig                — user-owned; created once, never overwritten
 #                               contains [user] + [include] pointing to both files
 
+# Both prompt sites below need the same refusal, so it lives in one place.
+_die_no_git_identity()
+{
+	die "Cannot prompt for a git identity: no controlling terminal, or input closed." \
+		"Pre-configure it before running install:" \
+		"git config --global user.name 'Your Name' && git config --global user.email 'you@example.com'"
+}
+
 _install_gitconfig()
 {
 	# Always update the bundle-managed file.
@@ -1027,22 +1035,30 @@ _install_gitconfig()
 	git_name=$(git config --file "${GITCONFIG}" user.name  2>/dev/null || true)
 	git_email=$(git config --file "${GITCONFIG}" user.email 2>/dev/null || true)
 
+	# Opening /dev/tty is the reliable probe, exactly as confirm() explains:
+	# `[[ -r /dev/tty ]]` only stats the device node, whose mode is 666, so it
+	# passes with no controlling terminal at all. That check was left here when
+	# confirm() was fixed, and the read below then failed — under set -u/-e a
+	# failed read aborts the script, so the install died here having ALREADY
+	# replaced ~/.zshrc and ~/.zshenv, leaving a half-configured shell and a
+	# stack line instead of an explanation.
 	if [[ -z "$git_name" ]] || [[ -z "$git_email" ]]; then
-		[[ -r /dev/tty ]] || die "No tty available for interactive prompts." \
-			"Pre-configure git identity before running install:" \
-			"git config --global user.name 'Your Name' && git config --global user.email 'you@example.com'"
+		{ : < /dev/tty; } 2>/dev/null || _die_no_git_identity
 	fi
 
+	# `read` also fails on EOF — Ctrl-D at the prompt, or any driver feeding the
+	# installer a fixed number of lines. Same situation, so say the same thing
+	# rather than aborting mid-install on an unhandled non-zero status.
 	if [[ -z "$git_name" ]]; then
 		while [[ -z "$git_name" ]]; do
 			_ask "Git user name: "
-			read -r git_name < /dev/tty
+			read -r git_name < /dev/tty || _die_no_git_identity
 		done
 	fi
 	if [[ -z "$git_email" ]]; then
 		while [[ -z "$git_email" ]]; do
 			_ask "Git email: "
-			read -r git_email < /dev/tty
+			read -r git_email < /dev/tty || _die_no_git_identity
 		done
 	fi
 
