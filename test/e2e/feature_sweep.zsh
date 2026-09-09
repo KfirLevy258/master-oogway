@@ -69,7 +69,7 @@ checkmatch "epoch relative"        '^[0-9]{10}$'  'epoch yesterday'
 checkrc "epoch rejects gibberish"  1             'epoch "not a date"'
 # _mo_paste, not pbpaste: the Linux branch uses wl-paste/xclip, and a headless
 # runner has neither, so the check is skipped rather than failed there.
-if _mo_paste >/dev/null 2>&1 || _mo_is_macos; then
+if _mo_clip_tool >/dev/null 2>&1; then
 	check "clip -> clipboard"      "e2e-$$"      "print -n e2e-$$ | clip >/dev/null; _mo_paste"
 else
 	skip "clip -> clipboard" "no clipboard tool (headless?)"

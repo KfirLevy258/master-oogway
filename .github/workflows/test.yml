@@ -30,7 +30,12 @@ jobs:
             sudo apt-get update -qq
             # bc for calc, trash-cli so the Linux trash path is exercised
             # rather than skipped, and the archive tools extract/compress use.
-            sudo apt-get install -y -qq zsh bc trash-cli zstd xz-utils unzip zip
+            # wl-clipboard plus a headless Wayland compositor, so the Linux
+            # clipboard branch is actually exercised instead of skipped. Without
+            # a display these are installed-but-unusable, which is the state
+            # that hung the suite on a real desktop reached over SSH.
+            sudo apt-get install -y -qq zsh bc trash-cli zstd xz-utils unzip zip \
+              wl-clipboard xvfb xclip
           else
             # macOS ships zsh, bc, tar, unzip and /usr/bin/trash already.
             brew install --quiet zstd || true

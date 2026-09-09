@@ -20,34 +20,56 @@ _mo_is_macos() { [[ "$_MO_PLATFORM" == macos ]] }
 _mo_is_linux() { [[ "$_MO_PLATFORM" == linux ]] }
 
 # -- clipboard ------------------------------------------------------------------
+# A clipboard tool is only usable if its display server is actually there.
+# wl-copy/wl-paste and xclip/xsel are frequently installed on a desktop distro
+# yet reached over SSH with no session — and they do not fail fast in that
+# state: wl-copy forks to own the selection and holds the pipe open, so a bare
+# `wl-paste` probe blocks forever rather than erroring. Requiring the display
+# variable first makes every caller safe, including the probe itself.
+_mo_clip_tool() {
+	_mo_is_macos && { print -- pbcopy; return 0 }
+	if [[ -n "${WAYLAND_DISPLAY:-}" ]] && command -v wl-copy &>/dev/null; then
+		print -- wl-copy; return 0
+	fi
+	if [[ -n "${DISPLAY:-}" ]]; then
+		command -v xclip &>/dev/null && { print -- xclip; return 0 }
+		command -v xsel  &>/dev/null && { print -- xsel;  return 0 }
+	fi
+	return 1
+}
+
 _mo_clip() {
 	local data="${1}"
 	if _mo_is_macos; then
 		printf '%s' "$data" | pbcopy
 		return
 	fi
-	if command -v wl-copy &>/dev/null; then
-		printf '%s' "$data" | wl-copy
-	elif command -v xclip &>/dev/null; then
-		printf '%s' "$data" | xclip -selection clipboard
-	elif command -v xsel &>/dev/null; then
-		printf '%s' "$data" | xsel --clipboard --input
-	else
-		echo "_mo_clip: no clipboard tool found (try: sudo apt install wl-clipboard)" >&2
+	local tool
+	if ! tool=$(_mo_clip_tool); then
+		echo "_mo_clip: no usable clipboard (no WAYLAND_DISPLAY or DISPLAY)" >&2
 		return 1
+	fi
+	if [[ "$tool" == wl-copy ]]; then
+		printf '%s' "$data" | wl-copy
+	elif [[ "$tool" == xclip ]]; then
+		printf '%s' "$data" | xclip -selection clipboard
+	else
+		printf '%s' "$data" | xsel --clipboard --input
 	fi
 }
 
 _mo_paste() {
 	if _mo_is_macos; then
 		pbpaste
-	elif command -v wl-paste &>/dev/null; then
-		wl-paste
-	elif command -v xclip &>/dev/null; then
-		xclip -selection clipboard -o
-	else
-		return 1
+		return
 	fi
+	local tool
+	tool=$(_mo_clip_tool) || return 1
+	case "$tool" in
+		wl-copy) wl-paste ;;
+		xclip)   xclip -selection clipboard -o ;;
+		xsel)    xsel --clipboard --output ;;
+	esac
 }
 
 # -- gui ------------------------------------------------------------------------

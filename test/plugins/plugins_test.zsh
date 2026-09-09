@@ -35,7 +35,7 @@ assert_eq "1699992800" "$(TZ=Asia/Jerusalem _mo_t mo-shell-tools "epoch '2023-11
 # clip must actually reach the clipboard, not fall through to printing.
 # Save and restore it: running the suite should not cost the tester whatever
 # they had copied.
-if _mo_is_macos || _mo_paste >/dev/null 2>&1; then
+if _mo_clip_tool >/dev/null 2>&1; then
 	local _saved_clip
 	_saved_clip=$(_mo_paste 2>/dev/null)
 	_mo_t mo-shell-tools "print -- clip-probe-$$ | clip" >/dev/null 2>&1
