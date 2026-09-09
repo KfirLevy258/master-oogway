@@ -424,6 +424,22 @@ _mo_sshd_is_server() {
 	fi
 }
 
+# Match processes by full command line and print "PID command-line".
+#
+# The flag that does this differs in meaning: procps reads -l as "print the
+# NAME", so `pgrep -lf sleep` on Linux prints "1234 bash" for a shell whose
+# arguments happen to contain sleep, while BSD prints the whole command line.
+# procps spells the BSD behaviour -a. Same output shape either way.
+_mo_pgrep_full() {
+	local -a flags=()
+	[[ "${1:-}" == -i ]] && { flags=(-i); shift }
+	if _mo_is_macos; then
+		pgrep -lf "${flags[@]}" -- "$1"
+	else
+		pgrep -af "${flags[@]}" -- "$1"
+	fi
+}
+
 # Logged-in sessions as TSV: user, tty, login-time, idle, pid, host.
 # `who -u` differs by exactly one field between the platforms (GNU prints one
 # ISO date token, BSD prints "Sep  8"), so parse from the right, where both

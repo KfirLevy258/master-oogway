@@ -93,6 +93,29 @@ echo "── installing into $TH"
 		bash "$TH/src/install.sh" --no-recommended-packages >/dev/null 2>&1 || true
 [[ -L "$TH/.zshrc" ]] || { echo "e2e: install did not link ~/.zshrc" >&2; exit 1; }
 
+# Assert we are testing THIS tree.
+#
+# install.sh decides it is running from a clone by looking for "master-oogway"
+# in the origin remote URL. A copy without a .git — a tarball, an export, an
+# archive download — fails that test, so the installer takes its curl-pipe
+# path, clones upstream from GitHub, and re-execs from there. The suite then
+# runs green or red against code nobody in this repo wrote, and says nothing.
+# That is exactly what happened the first time this was run on Linux: every
+# reported failure was upstream behaviour, including the bugs this branch
+# fixes.
+_installed="$(cd "$TH/.master-oogway" 2>/dev/null && pwd -P || true)"
+if [[ "$_installed" != "$(cd "$TH/src" && pwd -P)" ]]; then
+	echo "e2e: the installer did not use this tree." >&2
+	echo "  ~/.master-oogway resolves to: ${_installed:-<missing>}" >&2
+	echo "  expected:                     $TH/src" >&2
+	echo "  Most likely the copy has no .git, so install.sh treated it as a" >&2
+	echo "  curl-pipe bootstrap and cloned upstream instead." >&2
+	exit 1
+fi
+# Belt and braces: a marker only this branch has.
+[[ -f "$TH/.master-oogway/omz-custom/lib/platform.zsh" ]] || {
+	echo "e2e: installed tree has no lib/platform.zsh — wrong source" >&2; exit 1; }
+
 # Turn on the plugins that ship commented out, so the sweep covers them. Match
 # a name followed by its trailing comment: the plugins=() block also contains
 # prose comments, and uncommenting one of those injects its words as plugin

@@ -226,8 +226,14 @@ export LESS='-FRX'   # -F exit if fits screen, -R pass color, -X don't clear on 
 # -- key bindings ---------------------------------------------------------------
 # history-substring-search: Up/Down arrows search by the prefix already typed.
 # terminfo values map to the correct escape sequences for your terminal.
-bindkey "${terminfo[kcuu1]}" history-substring-search-up
-bindkey "${terminfo[kcud1]}" history-substring-search-down
+#
+# Guarded: terminfo has no kcuu1/kcud1 for a TERM that does not define one —
+# dumb, a minimal container, a shell started with TERM unset — and `bindkey ""`
+# then errors "cannot bind to an empty key sequence" on stderr at EVERY shell
+# start. The raw VT sequences below already cover those terminals, so skipping
+# the terminfo binding costs nothing.
+[[ -n "${terminfo[kcuu1]}" ]] && bindkey "${terminfo[kcuu1]}" history-substring-search-up
+[[ -n "${terminfo[kcud1]}" ]] && bindkey "${terminfo[kcud1]}" history-substring-search-down
 bindkey '^[[A' history-substring-search-up
 bindkey '^[[B' history-substring-search-down
 

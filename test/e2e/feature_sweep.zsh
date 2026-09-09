@@ -12,9 +12,38 @@ typeset -ga FAILED=()
 # TERM: a CI runner starts with none, and anything calling tput at shell
 # startup then writes "tput: No value for $TERM and no -T specified" to stderr,
 # which 2>&1 folds into the captured output and defeats anchored matches.
-_t() { perl -e 'alarm shift; exec @ARGV' "$1" \
-	env MO_WELCOME_FIELDS= ZSH_DISABLE_COMPFIX=true TERM="${TERM:-xterm-256color}" \
-	"${@:2}" 2>&1 }
+# Startup warnings are filtered out of the capture, not out of the shell.
+#
+# A plugin whose hard dependency is missing prints "[mo-x] missing: ... —
+# plugin not loaded" to stderr at every shell start, by design. 2>&1 then folds
+# that line onto the front of EVERY assertion's output, so on any machine
+# lacking one optional tool a large share of the suite fails for a reason that
+# has nothing to do with what is being tested. Dropping just those lines keeps
+# real stderr — the error messages several checks assert on — intact.
+_t() {
+	perl -e 'alarm shift; exec @ARGV' "$1" \
+		env MO_WELCOME_FIELDS= ZSH_DISABLE_COMPFIX=true TERM="${TERM:-xterm-256color}" \
+		"${@:2}" 2>&1
+}
+
+# Drop shell-startup noise from a captured string.
+#
+# A plugin whose hard dependency is missing prints "[mo-x] missing: ... — plugin
+# not loaded" to stderr at every shell start, by design, and 2>&1 folds it onto
+# the front of every capture — so on a machine lacking one optional tool a large
+# share of the suite fails for a reason unrelated to what is tested. Applied
+# here rather than inside _t: piping there would make _t return grep's status
+# instead of the command's, which silently inverted every checkrc that expects
+# a failure.
+_strip_noise() {
+	# Match the stable middle of the message, not its bracketed prefix. The
+	# warning is emitted with `print -P "%F{yellow}[mo-x]%f missing: ..."`, so
+	# an ANSI escape sits between the closing bracket and " missing:" and a
+	# pattern requiring them adjacent never matches.
+	command grep -vE 'missing: .*plugin not loaded' \
+	| command grep -vE 'Insecure completion-dependent directories' \
+	| command grep -vE '^\[oh-my-zsh\]'
+}
 
 ok()   { print -r -- "  \e[32mPASS\e[0m  $1"; (( PASS++ )) }
 bad()  { print -r -- "  \e[31mFAIL\e[0m  $1${2:+  — $2}"; (( FAIL++ )); FAILED+=("$1") }
@@ -32,7 +61,7 @@ check() {
 		bad "$label" "empty needle — use checkmatch or checkrc"
 		return
 	fi
-	local out; out=$(_t 15 zsh -ic "$*" 2>&1)
+	local out; out=$(_t 15 zsh -ic "$*" 2>&1 | _strip_noise)
 	if [[ "$out" == *"$want"* ]]; then ok "$label"
 	else bad "$label" "got: ${${out//$'\n'/ | }[1,90]}"; fi
 }
@@ -41,7 +70,7 @@ check() {
 # on the machine but whose shape does not.
 checkmatch() {
 	local label="$1" re="$2"; shift 2
-	local out; out=$(_t 15 zsh -ic "$*" 2>&1)
+	local out; out=$(_t 15 zsh -ic "$*" 2>&1 | _strip_noise)
 	if [[ "$out" =~ $re ]]; then ok "$label"
 	else bad "$label" "got: ${${out//$'\n'/ | }[1,90]}"; fi
 }
@@ -82,7 +111,13 @@ fi
 check "mo-where finds calc"        "mo-shell-tools" 'mo-where calc'
 check "mo-where finds indented rm" "mo-trash"    'mo-where rm'
 checkrc "mo-where rc=0 on hit"     0             'mo-where calc'
-check "cwhich"                     "/"           'cwhich git'
+# cwhich renders a command's file: bat prints a header naming the path, plain
+# cat prints the bytes — and for a binary those bytes are not assertable. Test
+# the contract that holds either way: it succeeds for a real command and fails
+# for one that has no file.
+checkrc "cwhich succeeds for a real command" 0 'cwhich git >/dev/null'
+checkrc "cwhich fails for a missing command" 1 'cwhich no-such-command-9271'
+
 
 print -r -- "\n\e[1m── mo-files ──\e[0m"
 check "compress .tar.gz"  "Created"   "cd $SB && mkdir -p s && echo hi > s/f.txt && compress a.tar.gz s"
@@ -134,7 +169,11 @@ checkrc "connected -v does not die on ss" 1 'connected -v'
 
 print -r -- "\n\e[1m── mo-search ──\e[0m"
 check "grep colorized"    "--color"  'alias grep'
-check "f finds a file"    "f.txt"    "cd $SB && f f.txt"
+if command -v fzf &>/dev/null; then
+	check "f finds a file"  "f.txt"  "cd $SB && f f.txt"
+else
+	skip "f finds a file" "mo-search needs fzf, which is absent"
+fi
 if man -k . >/dev/null 2>&1 && [[ -n "$(man -k . 2>/dev/null | head -1)" ]]; then
 	checkmatch "man -k . populated" '\(.*\)' 'man -k . 2>/dev/null | head -1'
 else
@@ -207,7 +246,9 @@ else
 fi
 
 print -r -- "\n\e[1m── platform primitives ──\e[0m"
-check "core summary"  "+"          '_mo_core_summary'
+# "6S+12P" only where the kernel reports performance tiers; a plain count
+# everywhere else, which is what the primitive is specified to return.
+checkmatch "core summary" '^([0-9]+[A-Za-z]\+[0-9]+[A-Za-z]|[0-9]+)$' '_mo_core_summary' 
 checkmatch "disk pct" '^[0-9]+$' '_mo_disk_pct'
 if [[ -n "$(_mo_local_ip)" ]]; then
 	check "local ip"  "."   '_mo_local_ip'

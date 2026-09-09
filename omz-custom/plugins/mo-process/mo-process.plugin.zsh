@@ -11,9 +11,9 @@ psgrep() {
 	if [[ "$1" == "-a" || "$1" == "--all" ]]; then
 		shift
 		[[ $# -eq 0 ]] && { echo "psgrep: missing name after -a" >&2; return 1; }
-		pgrep -lif "$1"
+		_mo_pgrep_full -i "$1"
 	else
-		pgrep -lf "$1"
+		_mo_pgrep_full "$1"
 	fi
 }
 
