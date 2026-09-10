@@ -1,5 +1,6 @@
 # -- PATH additions -------------------------------------------------------------
-typeset -U path   # deduplicate $path; prevents growth on re-source
+typeset -gU path  # -g: soursh sources this inside a function, where a bare
+                  # typeset would shadow the global $path with an empty local
 # List base dirs explicitly: /etc/zsh/zshenv seeds /usr/bin:/bin only at login,
 # so a re-source (source ~/.zshrc) would otherwise drop them. -U path dedups.
 path=($path /usr/local/sbin /usr/local/bin /usr/sbin /usr/bin /sbin /bin)
