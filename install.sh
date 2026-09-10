@@ -1417,11 +1417,8 @@ if [[ "${MO_FIRST_INSTALL}" == true ]]; then
 	echo -e "${COLOR_CYAN}╠══════════════════════════════════════════════════════════╣${COLOR_RESET}"
 	echo -e "${COLOR_CYAN}║${COLOR_RESET}  Pick your prompt preset:                                ${COLOR_CYAN}║${COLOR_RESET}"
 	echo -e "${COLOR_CYAN}║${COLOR_RESET}      ${COLOR_GREEN}master-oogway configure${COLOR_RESET}                             ${COLOR_CYAN}║${COLOR_RESET}"
-	# lan-ssh is Linux-only, so it is not advertised on macOS.
-	if ! _mo_is_macos; then
-		echo -e "${COLOR_CYAN}║${COLOR_RESET}  Forward your theme over SSH to other machines:          ${COLOR_CYAN}║${COLOR_RESET}"
-		echo -e "${COLOR_CYAN}║${COLOR_RESET}      ${COLOR_GREEN}master-oogway lan-ssh setup${COLOR_RESET}                         ${COLOR_CYAN}║${COLOR_RESET}"
-	fi
+	echo -e "${COLOR_CYAN}║${COLOR_RESET}  Forward your theme over SSH to other machines:          ${COLOR_CYAN}║${COLOR_RESET}"
+	echo -e "${COLOR_CYAN}║${COLOR_RESET}      ${COLOR_GREEN}master-oogway lan-ssh setup${COLOR_RESET}                         ${COLOR_CYAN}║${COLOR_RESET}"
 	echo -e "${COLOR_CYAN}╚══════════════════════════════════════════════════════════╝${COLOR_RESET}"
 	echo ""
 fi

@@ -40,7 +40,7 @@ omz-custom/                       ZSH_CUSTOM directory (sourced by oh-my-zsh)
   lib/
     colors.zsh                    named xterm-256 color table — shared by dragon theme and mo-color plugin
   plugins/
-    mo-*/mo-*.plugin.zsh          22 master-oogway plugins (5 override + 17 additive)
+    mo-*/mo-*.plugin.zsh          23 master-oogway plugins (5 override + 18 additive)
 ```
 
 ---
@@ -431,7 +431,7 @@ When you need a capability the layer does not have yet:
 3. Call it from the plugin.
 
 Do not add a `[[ $(uname) == Darwin ]]` branch inside a plugin. Spreading the
-decision across 22 plugins is what makes a codebase hard to port; one file with
+decision across 23 plugins is what makes a codebase hard to port; one file with
 two branches keeps each plugin readable and makes a third platform one file.
 
 Code that is genuinely platform-bound may opt out by declaring why. Prefer the

@@ -88,9 +88,6 @@ Additive plugins add new commands and never change existing behavior.
   in the default plugin list and is a silent no-op on Linux.
 - `mo-colorize-override` does not alias `ip` or `dmesg`: macOS has no `ip`, and
   its BSD `dmesg` takes no `--color`.
-- `master-oogway lan-ssh` is Linux-only. It needs cron rather than launchd, an
-  `/etc/ssh/sshd_config.d` directory macOS does not ship, and an nmap subnet
-  scan that triggers TCC prompts.
 - `epoch` accepts an ISO datetime but not natural language, since BSD `date`
   cannot parse it.
 - The `load` line in `mo-welcome` reports core tiers read from the hardware, so

@@ -19,7 +19,7 @@ themes/
 lib/
   colors.zsh             named xterm-256 color table (shared by dragon theme and mo-color plugin)
 plugins/
-  mo-*/                  22 master-oogway plugins (5 overrides + 17 additive)
+  mo-*/                  23 master-oogway plugins (5 overrides + 18 additive)
   gitstatus/             vendored: gitstatus (submodule)
   you-should-use/        vendored: you-should-use (submodule)
   zsh-autosuggestions/   vendored: zsh-autosuggestions (submodule)
