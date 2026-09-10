@@ -83,6 +83,21 @@ if _mo_is_macos && [[ -n "$(_mo_trash_tool)" ]]; then
 	assert_contains "$(_mo_trash_t 'trash-list')" "mo-t-$$-a.txt" \
 		"trash-list serves entries from the index"
 
+	# -- a filename that starts with a dash ------------------------------------
+	# Every arg matching -* was dropped as a flag, including the POSIX
+	# end-of-options separator, so `rm -- -x.txt` reached the trash tool with
+	# no targets at all and answered "rm: no files given". There was no way to
+	# trash such a file: \rm bypasses to /bin/rm and deletes it for real.
+	print -- dash > "$MO_TRASH_SANDBOX/-mo-t-$$-d.txt"
+	_mo_trash_t "cd '$MO_TRASH_SANDBOX' && rm -- '-mo-t-$$-d.txt'" >/dev/null
+	_MO_TRASHED+=("-mo-t-$$-d.txt")
+	assert_ok "rm -- trashes a file whose name begins with a dash" \
+		test ! -e "$MO_TRASH_SANDBOX/-mo-t-$$-d.txt"
+
+	# The separator itself must not become a target.
+	assert_not_contains "$(_mo_trash_t 'rm --')" "No such file" \
+		"a bare -- is not treated as a filename"
+
 	# -- clean up: only the files this test created ---------------------------
 	local _n
 	for _n in "${_MO_TRASHED[@]}"; do

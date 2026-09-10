@@ -29,10 +29,17 @@ else
 		fi
 		local -a targets=()
 		local a
+		local -i end_of_opts=0
 		# Flags are meaningless once the delete becomes a move, and would be
-		# taken as filenames by the trash tool.
+		# taken as filenames by the trash tool. "--" ends them: without that,
+		# it was dropped along with the -x.txt after it, so a file whose name
+		# begins with a dash could not be trashed at all — \rm bypasses to
+		# /bin/rm and deletes it for real.
 		for a in "$@"; do
-			[[ "$a" == -* ]] && continue
+			if (( ! end_of_opts )); then
+				[[ "$a" == -- ]] && { end_of_opts=1; continue }
+				[[ "$a" == -* ]] && continue
+			fi
 			targets+=("$a")
 		done
 		(( ${#targets} )) || { print -r -- "rm: no files given" >&2; return 1 }

@@ -698,20 +698,23 @@ _mo_trash_put() {
 	tool=$(_mo_trash_tool) || return 1
 	[[ -n "$tool" ]] || return 1
 
-	if ! _mo_is_macos; then
-		command "$tool" "$@" || return 1
-		local f
-		for f in "$@"; do print -- "${f:A}\t${f:t}"; done
-		return 0
-	fi
-
-	# trash -v reports:  # Moved "<src>" to "<dest>"
+	# Hand the tool absolute paths, never the name as typed. A relative name
+	# beginning with "-" is read as an option — /usr/bin/trash has no "--" of
+	# its own and answers "Un-recognized argument" — so `rm -- -x.txt` could
+	# not reach the trash at all.
 	local -a srcs=()
 	local f
 	for f in "$@"; do srcs+=("${f:A}"); done
 
+	if ! _mo_is_macos; then
+		command "$tool" "${srcs[@]}" || return 1
+		for f in "${srcs[@]}"; do print -- "${f}\t${f:t}"; done
+		return 0
+	fi
+
+	# trash -v reports:  # Moved "<src>" to "<dest>"
 	local out rc=0
-	out=$(command "$tool" -v "$@" 2>&1) || rc=$?
+	out=$(command "$tool" -v "${srcs[@]}" 2>&1) || rc=$?
 	(( rc == 0 )) || { print -r -- "$out" >&2; return $rc }
 
 	print -r -- "$out" | awk '
