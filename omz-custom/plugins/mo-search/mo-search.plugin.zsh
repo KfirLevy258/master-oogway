@@ -101,6 +101,17 @@ fhist() {
 	[[ -n "$cmd" ]] && print -z -- "$cmd"
 }
 
+# Shared by fman and its fzf preview, and reachable from the test suite.
+typeset -g _MO_FMAN_PARSE='
+	{
+		if (!match($0, /[A-Za-z0-9_.:@+\[\]-]+[ ]?\([0-9a-zA-Z]+\)/)) next
+		tok = substr($0, RSTART, RLENGTH)
+		p = index(tok, "(")
+		name = substr(tok, 1, p - 1); sub(/[ ,]+$/, "", name)
+		sec  = substr(tok, p + 1);    sub(/\)$/, "", sec)
+		print sec, name
+	}'
+
 fman() {
 	if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 		echo "Usage: fman"
@@ -117,15 +128,7 @@ fman() {
 	# ("ls (1)  - list"), mandoc glues it on ("ls(1) - list"), and either may
 	# group aliases ("a, b(1) - ..."). One regex covers both by matching the
 	# first name-plus-section token wherever the parenthesis falls.
-	local parse='
-		{
-			if (!match($0, /[A-Za-z0-9_.:@\[\]-]+[ ]?\([0-9a-zA-Z]+\)/)) next
-			tok = substr($0, RSTART, RLENGTH)
-			p = index(tok, "(")
-			name = substr(tok, 1, p - 1); sub(/[ ,]+$/, "", name)
-			sec  = substr(tok, p + 1);    sub(/\)$/, "", sec)
-			print sec, name
-		}'
+	local parse="$_MO_FMAN_PARSE"
 	page=$(man -k . 2>/dev/null \
 		| fzf --height=50% --reverse \
 			  --preview "echo {} | awk '${parse}' | xargs -r man 2>/dev/null || true" \
