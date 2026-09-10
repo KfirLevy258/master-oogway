@@ -371,6 +371,32 @@ copy_file()
 # (so a re-install doesn't clobber an existing one). Older installs left a
 # single .pre-master-oogway file with no timestamp. Restoring needs to find
 # either — newest timestamped wins; legacy bare name is the fallback.
+# Names any backup left behind. Uninstall restores and removes the newest one
+# only; older ones are from earlier installs, and the OLDEST is the file that
+# predates master-oogway entirely. Deleting somebody's original on the way out
+# is not ours to do — but leaving it silently on disk is how it gets found by
+# accident a year later, so say it is there.
+_report_leftover_backups()
+{
+	local _had_nullglob
+	shopt -q nullglob && _had_nullglob=true || _had_nullglob=false
+	shopt -s nullglob
+
+	# Every base in one call, so the explanation is printed once however many
+	# files turn up.
+	local -a found=()
+	local base b
+	for base in "$@"; do
+		local -a rest=( "${base}".[0-9]* )
+		for b in ${rest[@]+"${rest[@]}"}; do [[ -f "$b" ]] && found+=("$b"); done
+	done
+	$_had_nullglob || shopt -u nullglob
+	(( ${#found[@]} > 0 )) || return 0
+
+	info "Earlier backup(s) left in place — remove them yourself if you no longer want them:"
+	for b in ${found[@]+"${found[@]}"}; do info "    ${b}"; done
+}
+
 # Back up $1 to $1.pre-master-oogway.<timestamp> if it exists.
 # Echoes the backup path, or nothing if the source didn't exist.
 _mo_backup()
@@ -935,6 +961,8 @@ if [[ "$MO_UNINSTALL" == true ]]; then
 				warn "${home_path} not managed by master-oogway — left as-is, removed stale backup ${backup}"
 			fi
 		fi
+
+		_report_leftover_backups "${home_path}.pre-master-oogway"
 	}
 
 	# .zshrc
@@ -994,6 +1022,14 @@ if [[ "$MO_UNINSTALL" == true ]]; then
 			success "Removed ${CONF_DIR}"
 		else
 			warn "Skipped — ${CONF_DIR} left in place"
+			# --force backs the user-owned files up in place, under $CONF_DIR
+			# rather than beside the ~/ symlink, so the loop above never sees
+			# them and they accumulate across every forced install.
+			_report_leftover_backups \
+				"${ZSHRC_REAL}.pre-master-oogway" \
+				"${ZSHENV_REAL}.pre-master-oogway" \
+				"${GITCONFIG_REAL}.pre-master-oogway" \
+				"${EDITORCONFIG_REAL}.pre-master-oogway"
 		fi
 	else
 		success "${CONF_DIR} not found — nothing to remove"
