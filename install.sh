@@ -75,6 +75,51 @@ _nerd_font_installed()
 	return 1
 }
 
+# Names the Nerd Font already on disk, so the todo can say "point your terminal
+# at this one" rather than "install a font you already have". Filenames are the
+# only metadata reachable without a font parser: JetBrainsMonoNerdFont-Bold.ttf
+# is a family followed by a style suffix.
+_nerd_font_family()
+{
+	local d f name
+	local -a dirs
+	if _mo_is_macos; then
+		dirs=("${HOME}/Library/Fonts" /Library/Fonts /System/Library/Fonts)
+	else
+		dirs=("${HOME}/.local/share/fonts" "${HOME}/.fonts" /usr/share/fonts)
+	fi
+	for d in ${dirs[@]+"${dirs[@]}"}; do
+		[[ -d "$d" ]] || continue
+		f="$(find "$d" -iname '*nerd*font*' -print -quit 2>/dev/null)"
+		[[ -n "$f" ]] || continue
+		name="${f##*/}"; name="${name%.*}"; name="${name%%-*}"
+		[[ "$name" == *NerdFont* ]] && name="${name%%NerdFont*} Nerd Font"
+		printf '%s' "$name"
+		return 0
+	done
+	return 1
+}
+
+# Whether the glyphs will render, which is not what _nerd_font_installed
+# answers: a font on disk says nothing about the font the terminal is set to.
+# No portable way exists to read a terminal's active font, and under tmux or
+# ssh that font belongs to a terminal this script cannot see — so the probe
+# narrows it and the person looking at the screen settles it.
+#
+# Worded to match _dragon_ask_nerd_font in the theme's configure/pick.zsh, so
+# the installer and dragon-configure never ask the same question two ways.
+# Enter means no: a wrong no is a readable prompt, a wrong yes is tofu on
+# every line. \x rather than \u — macOS ships bash 3.2, which has no \u.
+_nerd_font_renders()
+{
+	_nerd_font_installed || return 1
+	_mo_has_tty || return 0
+	_ask "dragon can use special characters for a richer prompt.\n\n      Powerline arrow:  \xee\x82\xb0\n      Nerd Font icon:   \xef\x81\xbb\n\n      Do both render as a solid arrow and a folder icon? [y/N] "
+	local reply
+	reply="$(_mo_read_tty)"
+	[[ "$reply" =~ ^[Yy]([Ee][Ss])?$ ]]
+}
+
 # Mirrors of the two lib/platform.zsh primitives this script needs. It runs
 # under bash before any zsh is sourced, so it cannot call them directly.
 # GNU stat takes -c %a, BSD stat takes -f %OLp; GNU sed refuses an argument to
@@ -172,6 +217,12 @@ info()    { echo -e "${COLOR_CYAN}[INF]${COLOR_RESET} $*"; }
 warn()    { echo -e "${COLOR_YELLOW}[WRN]${COLOR_RESET} $*" >&2; }
 die()     { echo -e "${COLOR_RED}[ERR]${COLOR_RESET} $*" >&2; exit 1; }
 _ask()    { echo -en "${COLOR_MAGENTA}[ASK]${COLOR_RESET} $*" > /dev/tty; }
+
+# `[[ -r /dev/tty ]]` only stats the device node, whose mode is 666, so it
+# passes with no controlling terminal and the read then dies under set -e.
+# Opening it is the only reliable test — see 0e768f5.
+_mo_has_tty() { { : < /dev/tty; } 2>/dev/null; }
+_mo_read_tty() { local r=""; read -r r < /dev/tty || r=""; printf '%s' "$r"; }
 
 # -- Error handling -------------------------------------------------------------
 
@@ -1165,7 +1216,7 @@ _regen_theme_conf()
 	# path below, with no preset (schema defaults).
 	if [[ ! -f "${conf_file}" ]]; then
 		local _seed_nerd
-		_nerd_font_installed && _seed_nerd=true || _seed_nerd=false
+		_nerd_font_renders && _seed_nerd=true || _seed_nerd=false
 		if zsh -c '
 			typeset -g _DRAGON_CONF_FILE="$2"
 			typeset -g _DRAGON_STATE_DIR="${2:h}"
@@ -1192,19 +1243,27 @@ _regen_theme_conf()
 		else
 			warn "dragon theme config could not be seeded"
 		fi
-		if _nerd_font_installed; then
-			todo_item "Run 'dragon-configure' to customize your prompt. It also asks
-			  whether your terminal has a Nerd Font — the default assumes yes, so until
-			  you run it (or if you answer no) some segment icons may show as blank
-			  boxes or garbled characters."
-		else
-			todo_item "No Nerd Font found, so the prompt was set up with plain
-			  separators — nothing will render as an empty box. For the icon prompt,
-			  install a Nerd Font:
-			    $(_mo_pkg_hint_font)
-			  then point your terminal at it in its settings — no installer can do
-			  that for you — and run 'dragon-configure', answering yes to the
-			  Nerd Font question."
+		# Only plain separators leave the user something to fix.
+		if [[ "$_seed_nerd" == false ]]; then
+			if _nerd_font_installed; then
+				# fc-list can report a font living outside the dirs
+				# _nerd_font_family scans, so the name may be empty.
+				local _fam
+				_fam="$(_nerd_font_family || true)"
+				[[ -n "$_fam" ]] && _fam=" ($_fam)"
+				todo_item "A Nerd Font is installed${_fam} but your terminal
+				  isn't using it, so the prompt was set up with plain separators. Point your
+				  terminal's font setting at it — no installer can do that for you — then run
+				  'dragon-configure' and answer yes to the font question."
+			else
+				todo_item "No Nerd Font found, so the prompt was set up with plain
+				  separators — nothing will render as an empty box. For the icon prompt,
+				  install a Nerd Font:
+				    $(_mo_pkg_hint_font)
+				  then point your terminal at it in its settings — no installer can do
+				  that for you — and run 'dragon-configure', answering yes to the
+				  Nerd Font question."
+			fi
 		fi
 		return
 	fi

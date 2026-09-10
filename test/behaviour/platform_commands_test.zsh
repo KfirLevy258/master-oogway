@@ -247,3 +247,163 @@ if [[ -r "$_pick" ]]; then
 	assert_contains "$(<$_pick)" 'read -t 0.05 -k1' \
 		"Esc disambiguation uses zsh's read timeout, not stty"
 fi
+
+# ── the font question install.sh cannot answer on its own ───────────────────
+# _nerd_font_renders decides what install.sh seeds USE_NERD_FONT to. A font on
+# disk is not the question: a machine can have JetBrainsMono NF installed and
+# still render U+E0B0 as a box, because the terminal is pointed at Monaco. No
+# portable way exists to read a terminal's active font — Ghostty and kitty keep
+# it in plain text, iTerm2 behind a profile GUID, Terminal.app in an archived
+# NSFont, WezTerm in arbitrary Lua — and under tmux or ssh the font belongs to a
+# terminal we cannot see at all. So the disk probe narrows it and the person
+# looking at the screen settles it.
+#
+# The two environment probes are separate one-liners precisely so this table can
+# be walked without a pty. 0 = yes, mirroring shell exit status.
+typeset -g _NF_SEED _NF_PROMPT
+_nf_seed() {
+	local has_font="$1" has_tty="$2" answer="$3" drv
+	drv="$(mktemp)"
+	{
+		print -r -- 'set -Eeuo pipefail'
+		print -r -- '_ask() { printf "%s" "$*" >&2; }'
+		print -r -- "_nerd_font_installed() { return $has_font; }"
+		print -r -- "_mo_has_tty() { return $has_tty; }"
+		print -r -- "_mo_read_tty() { printf '%s' '$answer'; }"
+		awk '/^_nerd_font_renders\(\)/,/^}$/' "$MO_ROOT/install.sh"
+		print -r -- 'if _nerd_font_renders; then echo true; else echo false; fi'
+	} > "$drv"
+	_NF_SEED="$(bash "$drv" 2>"${drv}.err")"
+	_NF_PROMPT="$(<"${drv}.err")"
+	rm -f "$drv" "${drv}.err"
+}
+
+# No font on disk: nothing to look at, so spend no prompt on it.
+_nf_seed 1 0 ''
+assert_eq "false" "$_NF_SEED"   "no font on disk seeds plain separators"
+assert_eq ""      "$_NF_PROMPT" "no font on disk asks nothing"
+
+# No controlling terminal — curl | bash, CI, the e2e sweep. Nobody can answer,
+# so fall back to what the disk says rather than blocking the install forever.
+_nf_seed 0 1 ''
+assert_eq "true" "$_NF_SEED"   "a headless install falls back to the disk probe"
+assert_eq ""     "$_NF_PROMPT" "a headless install asks nothing"
+
+# Font on disk and someone to ask: the answer decides.
+_nf_seed 0 0 'y'
+assert_eq "true" "$_NF_SEED" "seeing the glyphs seeds Nerd Font separators"
+assert_contains "$_NF_PROMPT" "render" "the question is actually asked"
+
+_nf_seed 0 0 'n'
+assert_eq "false" "$_NF_SEED" "not seeing the glyphs seeds plain separators"
+
+# Enter must mean no. The failure modes are asymmetric: a wrong no is a plain
+# but readable prompt, a wrong yes is a tofu box on every line.
+_nf_seed 0 0 ''
+assert_eq "false" "$_NF_SEED" "a bare Enter declines rather than assuming"
+
+# Structural guards on the new tty code. Both mistakes below have been made in
+# this file before.
+local _nfr _hastty
+_nfr=$(awk '/^_nerd_font_renders\(\)/,/^}$/' "$MO_ROOT/install.sh")
+_hastty=$(awk '/^_mo_has_tty\(\)/,/^}$/' "$MO_ROOT/install.sh")
+# 0e768f5 fixed `[[ -r /dev/tty ]]` once already: it stats a mode-666 device
+# node, so it passes with no controlling terminal and the read then dies.
+assert_contains "$_hastty" '{ : < /dev/tty; }' \
+	"the tty probe opens /dev/tty rather than stat-ing it"
+assert_not_contains "$_hastty" '[[ -r /dev/tty ]]' \
+	"the tty probe does not gate on -r /dev/tty"
+# macOS ships bash 3.2, which has no \u escape. \x is the portable spelling.
+assert_contains "$_nfr" '\xee\x82\xb0' \
+	"the powerline glyph is written as bytes bash 3.2 understands"
+assert_not_contains "$_nfr" '\uE0B0' \
+	"the glyph does not use a \\u escape bash 3.2 cannot read"
+assert_not_contains "$_nfr" '\ue0b0' \
+	"the glyph does not use a lowercase \\u escape either"
+
+# The seed path must ask the question, not just consult the disk.
+local _seed2
+_seed2=$(awk '/^_regen_theme_conf\(\)/,/^}$/' "$MO_ROOT/install.sh")
+assert_contains "$_seed2" "_nerd_font_renders" \
+	"the seeded config comes from the rendering question"
+
+# The case this whole change exists for: a font is installed and the terminal is
+# not using it. Before, that produced no guidance at all.
+local _todos
+_todos=$(awk '/^_regen_theme_conf\(\)/,/^}$/' "$MO_ROOT/install.sh")
+assert_contains "$_todos" "isn't using it" \
+	"an installed-but-unused font gets its own todo"
+
+# The todo can name the font it found, which turns "install a Nerd Font" into
+# "you already have this one, point your terminal at it".
+_nf_family() {
+	local home="$1" drv
+	drv="$(mktemp)"
+	{
+		print -r -- 'set -Eeuo pipefail'
+		print -r -- "_mo_is_macos() { [[ $(uname -s) == Darwin ]]; }"
+		awk '/^_nerd_font_family\(\)/,/^}$/' "$MO_ROOT/install.sh"
+		print -r -- '_nerd_font_family'
+	} > "$drv"
+	HOME="$home" bash "$drv" 2>/dev/null
+	rm -f "$drv"
+}
+local _fh
+_fh="$(mktemp -d)"
+mkdir -p "$_fh/Library/Fonts" "$_fh/.local/share/fonts"
+: > "$_fh/Library/Fonts/JetBrainsMonoNerdFont-Regular.ttf"
+: > "$_fh/.local/share/fonts/JetBrainsMonoNerdFont-Regular.ttf"
+assert_eq "JetBrainsMono Nerd Font" "$(_nf_family "$_fh")" \
+	"the installed family is named in readable form"
+rm -rf "$_fh"
+
+assert_contains "$_todos" '_nerd_font_family' \
+	"the installed-but-unused todo names the font it found"
+
+# ── the seam the stubs bypass: a real read from a real tty ──────────────────
+# Everything above replaces _mo_read_tty, so a broken `read -r r < /dev/tty`
+# would pass the whole truth table. This drives the real helpers on a real pty.
+if ! command -v script &>/dev/null; then
+	t_skip "the font question reads a real tty" "script(1) not installed"
+	t_skip "a bare Enter on a real tty declines" "script(1) not installed"
+else
+	# script(1) takes its command differently per platform: util-linux wants
+	# -c "cmd" with the file last, BSD takes the file then the argv.
+	_nf_on_pty() {
+		local answer="$1" drv out
+		drv="$(mktemp)"
+		{
+			print -r -- 'set -Eeuo pipefail'
+			print -r -- 'COLOR_MAGENTA="" COLOR_RESET=""'
+			print -r -- '_ask() { echo -en "$*" > /dev/tty; }'
+			print -r -- '_nerd_font_installed() { return 0; }'
+			command grep '^_mo_has_tty()'  "$MO_ROOT/install.sh"
+			command grep '^_mo_read_tty()' "$MO_ROOT/install.sh"
+			awk '/^_nerd_font_renders\(\)/,/^}$/' "$MO_ROOT/install.sh"
+			print -r -- 'if _nerd_font_renders; then echo RENDERS=yes; else echo RENDERS=no; fi'
+		} > "$drv"
+		# stdin must outlive the read. Closing it straight after the answer
+		# delivers EOF to the pty before the prompt is even printed, and the
+		# read then returns empty — which looks exactly like a declined answer.
+		if script --version 2>&1 | command grep -qi util-linux; then
+			out="$( { printf '%s\n' "$answer"; sleep 2; } | script -qec "bash $drv" /dev/null 2>&1)"
+		else
+			out="$( { printf '%s\n' "$answer"; sleep 2; } | script -q /dev/null bash "$drv" 2>&1)"
+		fi
+		rm -f "$drv"
+		print -r -- "${${out##*RENDERS=}%%[^a-z]*}"
+	}
+	assert_eq "yes" "$(_nf_on_pty y)" "the font question reads a real tty"
+	assert_eq "no"  "$(_nf_on_pty '')" "a bare Enter on a real tty declines"
+fi
+
+# fc-list can report a Nerd Font that lives outside the directories
+# _nerd_font_family scans (/usr/local/share/fonts, a fontconfig custom dir), so
+# the name can come back empty while the font is genuinely installed.
+# Interpolating it bare would print "A Nerd Font is installed () but ...".
+local _eh
+_eh="$(mktemp -d)"
+assert_eq "" "$(_nf_family "$_eh")" "an unscanned font dir yields no family name"
+rm -rf "$_eh"
+assert_not_contains "$_todos" '($(_nerd_font_family))' \
+	"the font name is composed conditionally, not interpolated bare"
