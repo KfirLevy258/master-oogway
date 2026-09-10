@@ -521,7 +521,14 @@ _collect_missing_optionals()
 			esac
 			# Skip tools this platform provides by other means — reporting
 			# xclip as missing on macOS, where pbcopy covers it, is noise.
-			[[ "$(_mo_brew_formula "$pkg")" == "@builtin" ]] && _mo_is_macos && continue
+			# "@none:<why>" is that class just as much as "@builtin": the
+			# package cannot be brew-installed and the hint beside it says so,
+			# so listing it told the user to install what it called needless.
+			if _mo_is_macos; then
+				case "$(_mo_brew_formula "$pkg")" in
+					@builtin|@none:*) continue ;;
+				esac
+			fi
 			_MO_MISSING+=("${plugin_name}"$'\t'"${cmd}"$'\t'"${desc}"$'\t'"${pkg}")
 		done <<< "$raw"
 	done
