@@ -1372,7 +1372,9 @@ _regen_theme_conf()
 		return
 	fi
 
-	cp "${conf_file}" "${conf_file}.bak.$(date +%Y%m%d_%H%M%S)"
+	local conf_bak
+	conf_bak="${conf_file}.bak.$(date +%Y%m%d_%H%M%S)"
+	cp "${conf_file}" "${conf_bak}"
 
 	# Regenerate in a one-shot zsh: init the schema, load the current values,
 	# carry over the `# preset:` header, and re-emit through the writer. The
@@ -1391,8 +1393,17 @@ _regen_theme_conf()
 		preset=$(command grep -m1 "^# preset: " "$2" | cut -d" " -f3)
 		_dragon_write_conf "$preset"
 	' -- "${themes_dir}" "${conf_file}" 2>/dev/null; then
-		success "dragon theme config refreshed (backup kept)"
+		# An update that changes nothing leaves nothing worth keeping. The
+		# backup was written unconditionally, so every re-run dropped another
+		# ~23 KB copy next to conf.zsh that differed only in its filename.
+		if cmp -s "${conf_bak}" "${conf_file}"; then
+			rm -f "${conf_bak}"
+			success "dragon theme config already current"
+		else
+			success "dragon theme config refreshed (backup: ${conf_bak##*/})"
+		fi
 	else
+		# Keep the backup: the file on disk is whatever the failed run left.
 		warn "dragon theme config could not be refreshed — left unchanged"
 	fi
 }
