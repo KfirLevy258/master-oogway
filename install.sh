@@ -604,11 +604,17 @@ _script_dir()
 	echo "$dir"
 }
 
+# INSTALL_DIR is spelled "$HOME/.master-oogway", and that is the path an
+# update-mode run was invoked through, so both sides of this comparison must
+# stay logical. Resolving INSTALL_DIR with `pwd -P` instead made dev mode
+# (where ~/.master-oogway is a symlink to the clone) look like update mode and
+# pull the developer's working tree, and made a HOME behind a symlink fail the
+# comparison so the bootstrap could never reach update mode at all.
 _running_from_install_dir()
 {
-	local real_install_dir
-	real_install_dir=$(cd "${INSTALL_DIR}" 2>/dev/null && pwd -P) || return 1
-	[[ "$(_script_dir)" == "${real_install_dir}" ]]
+	local dir
+	dir=$(_script_dir) || return 1
+	[[ "$dir" == "${INSTALL_DIR}" ]]
 }
 
 _running_from_master_oogway_clone()
