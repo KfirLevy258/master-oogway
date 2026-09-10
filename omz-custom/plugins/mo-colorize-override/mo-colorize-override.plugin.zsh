@@ -15,6 +15,9 @@
 # error shows up as a usage message, which exit status alone does not reveal
 # (BSD dmesg rejects the flag and still exits 0, while `grep -q` supports it
 # and exits 1 on no match).
+# oh-my-zsh does not source $ZSH_CUSTOM/lib; nor does a zshrc seeded before it.
+[[ -n ${_MO_PLATFORM_LOADED-} ]] || source "${0:h}/../../lib/platform.zsh"
+
 _mo_colorize_supports() {
 	local cmd="$1"; shift
 	command -v "$cmd" &>/dev/null || return 1

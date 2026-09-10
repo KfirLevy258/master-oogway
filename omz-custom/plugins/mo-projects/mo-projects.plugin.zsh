@@ -1,6 +1,9 @@
 
 # Resolve the projects directory: honour MO_PROJECTS_PROJ_DIR if set,
 # otherwise fall back to ~/projects or ~/Projects (whichever exists first).
+# oh-my-zsh does not source $ZSH_CUSTOM/lib; nor does a zshrc seeded before it.
+[[ -n ${_MO_PLATFORM_LOADED-} ]] || source "${0:h}/../../lib/platform.zsh"
+
 _mo_projects_dir() {
 	if [[ -n "${MO_PROJECTS_PROJ_DIR:-}" ]]; then
 		echo "$MO_PROJECTS_PROJ_DIR"

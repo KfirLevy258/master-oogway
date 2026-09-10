@@ -1,4 +1,7 @@
 
+# oh-my-zsh does not source $ZSH_CUSTOM/lib; nor does a zshrc seeded before it.
+[[ -n ${_MO_PLATFORM_LOADED-} ]] || source "${0:h}/../../lib/platform.zsh"
+
 mkcd() {
 	if [[ "${1:-}" == "-h" || "${1:-}" == "--help" || $# -eq 0 ]]; then
 		echo "Usage: mkcd <dir>"

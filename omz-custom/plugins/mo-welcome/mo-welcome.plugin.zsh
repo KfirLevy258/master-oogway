@@ -1,3 +1,6 @@
+# oh-my-zsh does not source $ZSH_CUSTOM/lib; nor does a zshrc seeded before it.
+[[ -n ${_MO_PLATFORM_LOADED-} ]] || source "${0:h}/../../lib/platform.zsh"
+
 _mo_welcome_field_host() {
 	print -P "  %F{245}host%f   %F{cyan}%B${USER}%b%F{245} @ %f%F{green}%B${HOST%%.*}%b%f"
 }

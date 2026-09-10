@@ -1,4 +1,7 @@
 
+# oh-my-zsh does not source $ZSH_CUSTOM/lib; nor does a zshrc seeded before it.
+[[ -n ${_MO_PLATFORM_LOADED-} ]] || source "${0:h}/../../lib/platform.zsh"
+
 _MO_INSTALL_DIR="${HOME}/.master-oogway"
 
 # diff-zshrc needs a tool that both runs AND writes to the terminal, so it asks

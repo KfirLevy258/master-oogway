@@ -1,5 +1,8 @@
 
 # Tool name → apt package hint, shared by extract() and compress().
+# oh-my-zsh does not source $ZSH_CUSTOM/lib; nor does a zshrc seeded before it.
+[[ -n ${_MO_PLATFORM_LOADED-} ]] || source "${0:h}/../../lib/platform.zsh"
+
 typeset -gA _MO_EXTRACT_HINTS=(
 	[tar]="tar"
 	[bunzip2]="bzip2"

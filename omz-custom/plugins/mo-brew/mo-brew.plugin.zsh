@@ -1,3 +1,6 @@
+# oh-my-zsh does not source $ZSH_CUSTOM/lib; nor does a zshrc seeded before it.
+[[ -n ${_MO_PLATFORM_LOADED-} ]] || source "${0:h}/../../lib/platform.zsh"
+
 source "${0:h}/requirements.zsh" || return
 
 # Homebrew helpers. Arch-aware via _mo_brew_prefix, so the same config works on

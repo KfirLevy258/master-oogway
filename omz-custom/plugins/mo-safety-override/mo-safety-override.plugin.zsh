@@ -1,6 +1,9 @@
 # These change the default behavior of common system commands.
 # Remove this file to restore the original behavior of all four commands.
 
+# oh-my-zsh does not source $ZSH_CUSTOM/lib; nor does a zshrc seeded before it.
+[[ -n ${_MO_PLATFORM_LOADED-} ]] || source "${0:h}/../../lib/platform.zsh"
+
 alias cp="cp -i"        # prompt before overwrite
 alias mv="mv -i"        # prompt before overwrite
 alias mkdir="mkdir -pv" # create parents silently, print each new dir

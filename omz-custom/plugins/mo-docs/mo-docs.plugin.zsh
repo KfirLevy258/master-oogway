@@ -1,4 +1,7 @@
 
+# oh-my-zsh does not source $ZSH_CUSTOM/lib; nor does a zshrc seeded before it.
+[[ -n ${_MO_PLATFORM_LOADED-} ]] || source "${0:h}/../../lib/platform.zsh"
+
 md2pdf() {
 	if [[ "${1:-}" == "-h" || "${1:-}" == "--help" ]]; then
 		echo "Usage: md2pdf <file.md> [file2.md ...]"

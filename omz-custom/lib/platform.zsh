@@ -9,6 +9,10 @@
 # Each function pairs the Linux implementation (the behaviour master-oogway
 # already had) with its macOS counterpart, so the two are reviewable together.
 
+# Set before anything else: plugins guard-source this file on the strength
+# of it, and a partial load must not look like a complete one.
+typeset -g _MO_PLATFORM_LOADED=1
+
 typeset -g _MO_PLATFORM
 case "$(command uname -s)" in
 	Linux)  _MO_PLATFORM=linux  ;;
