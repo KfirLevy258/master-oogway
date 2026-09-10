@@ -152,6 +152,19 @@ assert_contains "$_nf" "Library/Fonts"      "the macOS branch looks in the Libra
 assert_contains "$_nf" "fc-list"            "the Linux branch asks fontconfig"
 assert_contains "$_nf" ".local/share/fonts" "the Linux branch also looks on disk when fc-list is absent"
 
+# The probe must actually reach the seeded config. Detecting the font and then
+# writing the schema default anyway would fix nothing.
+local _seed
+_seed=$(awk '/^_regen_theme_conf\(\)/,/^}$/' "$MO_ROOT/install.sh")
+assert_contains "$_seed" '_DRAGON_CURRENT[USE_NERD_FONT]' \
+	"the seeded config takes the Nerd Font answer from the probe"
+assert_contains "$_seed" "_nerd_font_installed" \
+	"the seed path runs the probe"
+# Multi-line todos are indented in the source; that indentation used to reach
+# the screen verbatim, putting continuation lines far right of what they follow.
+assert_contains "$(awk '/^print_todos\(\)/,/^}$/' "$MO_ROOT/install.sh")" \
+	'2,$s/^[[:space:]]*/' "multi-line todos are re-indented for display"
+
 # The optional-package report runs at the very bottom of install.sh, after every
 # dotfile is linked, so it cannot block anything. It used to `exit 1` there —
 # reporting failure for an install that had succeeded, so `install.sh && x` never

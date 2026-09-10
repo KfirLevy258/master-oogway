@@ -266,6 +266,13 @@ else
 	command -v dmesg &>/dev/null && check "dmesg alias on Linux" "--color" 'alias dmesg' || skip "dmesg alias" "dmesg absent"
 fi
 
+print -r -- "\n\e[1m── theme seeding ──\e[0m"
+# The throwaway HOME has no font directory, so the installer must have seeded
+# plain separators. Seeding the schema default of true here would put a tofu box
+# in place of every separator on the first prompt.
+check "no Nerd Font seeds plain separators" "USE_NERD_FONT='false'" \
+	"command grep -o \"USE_NERD_FONT='[a-z]*'\" \$HOME/.config/master-oogway/conf.zsh | head -1"
+
 print -r -- "\n\e[1m── platform primitives ──\e[0m"
 # "6S+12P" only where the kernel reports performance tiers; a plain count
 # everywhere else, which is what the primitive is specified to return.

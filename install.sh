@@ -409,9 +409,14 @@ print_todos()
 	echo -e "${COLOR_YELLOW}┌─────────────────────────────────────────────────────┐${COLOR_RESET}"
 	echo -e "${COLOR_YELLOW}│  Manual steps required after install                │${COLOR_RESET}"
 	echo -e "${COLOR_YELLOW}└─────────────────────────────────────────────────────┘${COLOR_RESET}"
-	local i=1
+	local i=1 item rendered
 	for item in ${_TODO_ITEMS[@]+"${_TODO_ITEMS[@]}"}; do
-		echo -e "${COLOR_YELLOW}  ${i}. ${item}${COLOR_RESET}"
+		# A multi-line todo is written as an indented string in the source, and
+		# that indentation reached the screen verbatim — tabs and all — so the
+		# continuation lines landed far to the right of the text they continue.
+		# Re-indent them to sit under the first line, past the "N. " prefix.
+		rendered=$(printf '%s\n' "$item" | sed '2,$s/^[[:space:]]*/     /')
+		echo -e "${COLOR_YELLOW}  ${i}. ${rendered}${COLOR_RESET}"
 		i=$(( i + 1 ))
 	done
 	echo ""
@@ -1159,6 +1164,8 @@ _regen_theme_conf()
 	# users who never ran dragon-configure. Uses the same writer as the regen
 	# path below, with no preset (schema defaults).
 	if [[ ! -f "${conf_file}" ]]; then
+		local _seed_nerd
+		_nerd_font_installed && _seed_nerd=true || _seed_nerd=false
 		if zsh -c '
 			typeset -g _DRAGON_CONF_FILE="$2"
 			typeset -g _DRAGON_STATE_DIR="${2:h}"
@@ -1169,9 +1176,19 @@ _regen_theme_conf()
 			_dragon_init_defaults; _dragon_init_types
 			_dragon_init_hints;    _dragon_init_groups
 			_dragon_load_current_conf
+			# Seed the Nerd Font answer from the machine rather than the schema
+			# default. The default is true, and on a machine with no Nerd Font
+			# that renders every separator and icon as a tofu box on the very
+			# first prompt — the install looks broken when it is not. $3 carries
+			# the answer from the bash probe above.
+			[[ -n "$3" ]] && _DRAGON_CURRENT[USE_NERD_FONT]="$3"
 			_dragon_write_conf ""
-		' -- "${themes_dir}" "${conf_file}" 2>/dev/null; then
-			success "dragon theme config seeded (default preset)"
+		' -- "${themes_dir}" "${conf_file}" "${_seed_nerd}" 2>/dev/null; then
+			if [[ "$_seed_nerd" == false ]]; then
+				success "dragon theme config seeded (no Nerd Font found — plain separators)"
+			else
+				success "dragon theme config seeded (default preset)"
+			fi
 		else
 			warn "dragon theme config could not be seeded"
 		fi
@@ -1181,13 +1198,13 @@ _regen_theme_conf()
 			  you run it (or if you answer no) some segment icons may show as blank
 			  boxes or garbled characters."
 		else
-			todo_item "No Nerd Font found. The prompt defaults to Nerd Font icons, so
-			  separators and segment icons will render as boxes with a '?' until you
-			  install one AND select it in your terminal's settings:
+			todo_item "No Nerd Font found, so the prompt was set up with plain
+			  separators — nothing will render as an empty box. For the icon prompt,
+			  install a Nerd Font:
 			    $(_mo_pkg_hint_font)
-			  Then set your terminal font to it. Alternatively run 'dragon-configure'
-			  and answer no to the Nerd Font question, which switches the prompt to
-			  plain-text separators."
+			  then point your terminal at it in its settings — no installer can do
+			  that for you — and run 'dragon-configure', answering yes to the
+			  Nerd Font question."
 		fi
 		return
 	fi
