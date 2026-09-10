@@ -45,7 +45,7 @@ jobs:
             # real desktop reached over SSH, and the guard against it belongs
             # under test too.
             sudo apt-get install -y -qq zsh bc trash-cli zstd xz-utils unzip zip \
-              wl-clipboard xvfb xclip
+              wl-clipboard xvfb xclip shellcheck
             # Build the man index synchronously. apt leaves man-db rebuilding it
             # in the background, and while that runs every apropos query returns
             # nothing — which failed the `man -k .` assertion on one run and
@@ -95,6 +95,13 @@ jobs:
               | grep -E '"\$\{[A-Za-z_][A-Za-z0-9_]*\[@\]\}"' >&2
             exit 1
           fi
+
+      # CLAUDE.md lists this among the checks to run before every commit, but
+      # nothing ran it, so install.sh sat on eight warnings none of us saw.
+      # Linux only: shellcheck's verdict does not vary by runner.
+      - name: Shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck install.sh
 
       - name: Platform lint
         run: zsh test/lint_platform.zsh

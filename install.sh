@@ -206,8 +206,15 @@ _mo_pkg_hint() {
 # -- Colors & logging -----------------------------------------------------------
 
 if [[ -t 1 ]] && [[ "${NO_COLOR:-}" == "" ]] && [[ "${TERM:-}" != "dumb" ]] && command -v tput &>/dev/null; then
-	readonly COLOR_RESET="$(tput sgr0)"
-	readonly COLOR_GREEN="$(tput setaf 2)" COLOR_YELLOW="$(tput bold)$(tput setaf 3)" COLOR_RED="$(tput setaf 1)" COLOR_CYAN="$(tput setaf 6)" COLOR_MAGENTA="$(tput setaf 5)"
+	# Assigned before `readonly` so a failing tput surfaces as a non-zero
+	# status instead of being masked by the declaration's own exit code.
+	COLOR_RESET="$(tput sgr0)"
+	COLOR_GREEN="$(tput setaf 2)"
+	COLOR_YELLOW="$(tput bold)$(tput setaf 3)"
+	COLOR_RED="$(tput setaf 1)"
+	COLOR_CYAN="$(tput setaf 6)"
+	COLOR_MAGENTA="$(tput setaf 5)"
+	readonly COLOR_RESET COLOR_GREEN COLOR_YELLOW COLOR_RED COLOR_CYAN COLOR_MAGENTA
 else
 	readonly COLOR_RESET='' COLOR_GREEN='' COLOR_YELLOW='' COLOR_RED='' COLOR_CYAN='' COLOR_MAGENTA=''
 fi
@@ -323,7 +330,8 @@ _mo_backup()
 {
 	local src="$1"
 	[[ -f "$src" ]] || return 0
-	local backup="${src}.pre-master-oogway.$(date +%Y%m%d_%H%M%S)"
+	local backup
+	backup="${src}.pre-master-oogway.$(date +%Y%m%d_%H%M%S)"
 	cp "$src" "$backup"
 	# The single place a backup is announced. Three call sites used to repeat
 	# this line right after calling us, so every migration logged it twice.
@@ -1111,6 +1119,7 @@ _install_editorconfig()
 	_mo_migrate_to_symlink "${HOME}/.editorconfig" "${EDITORCONFIG_REAL}" "$template"
 
 	if ! cmp -s "$template" "${EDITORCONFIG_REAL}"; then
+		# shellcheck disable=SC2088  # literal text in a message, not a path
 		warn "~/.editorconfig has drifted from the master-oogway template."
 		warn "Review with: diff ${EDITORCONFIG_REAL} ${INSTALL_DIR}/editorconfig.master-oogway"
 	fi
