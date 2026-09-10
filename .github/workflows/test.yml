@@ -44,8 +44,11 @@ jobs:
             # unusable is deliberate: it is the state that hung the suite on a
             # real desktop reached over SSH, and the guard against it belongs
             # under test too.
+            # fzf is a hard dep of mo-search: without it the plugin does not
+            # load and every fman assertion skips, which is how the man-page
+            # parser reached Linux untested.
             sudo apt-get install -y -qq zsh bc trash-cli zstd xz-utils unzip zip \
-              wl-clipboard xvfb xclip shellcheck
+              wl-clipboard xvfb xclip shellcheck fzf
             # Build the man index synchronously. apt leaves man-db rebuilding it
             # in the background, and while that runs every apropos query returns
             # nothing — which failed the `man -k .` assertion on one run and
