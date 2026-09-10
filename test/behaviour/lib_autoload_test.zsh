@@ -18,8 +18,11 @@ _mo_autoload_stderr() {
 
 typeset -g _mo_autoload_noise=""
 
+# requirements.zsh counts: it is sourced by the plugin and calls primitives of
+# its own (_mo_pkg_hint in every "missing: ..." message), so a plugin whose
+# only primitive use lives there needs the guard just as much.
 for _mo_autoload_f in "$MO_ROOT"/omz-custom/plugins/mo-*/mo-*.plugin.zsh(#qN); do
-	grep -q '_mo_' "$_mo_autoload_f" || continue
+	grep -qs '_mo_' "$_mo_autoload_f" "${_mo_autoload_f:h}/requirements.zsh" || continue
 
 	assert_eq defined "$(_mo_autoload_probe "$_mo_autoload_f")" \
 		"${_mo_autoload_f:h:t} has the platform primitives when sourced alone"
