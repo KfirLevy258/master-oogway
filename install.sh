@@ -177,26 +177,43 @@ _mo_pkg_hint() {
 		echo "sudo apt install $*"
 		return
 	fi
-	local pkg mapped
+	local pkg mapped note
 	local formulae="" casks="" notes=""
 	for pkg in "$@"; do
 		mapped="$(_mo_brew_formula "$pkg")"
+		note=""
 		case "$mapped" in
 			# No early return: it dropped every package after the first
 			# non-formula, so `_mo_pkg_hint build-essential fzf` never
 			# mentioned fzf.
-			@xcode)   notes="${notes}${notes:+; }xcode-select --install" ;;
-			@builtin) notes="${notes}${notes:+; }${pkg} ships with macOS — check your PATH" ;;
-			@none:*)  notes="${notes}${notes:+; }${mapped#@none:}" ;;
+			@xcode)   note="xcode-select --install" ;;
+			@builtin) note="${pkg} ships with macOS — check your PATH" ;;
+			@none:*)  note="${mapped#@none:}" ;;
 			@cask:*)  casks="${casks}${casks:+ }${mapped#@cask:}" ;;
 			*)        formulae="${formulae}${formulae:+ }${mapped}" ;;
 		esac
+		# Deduplicated, as lib/platform.zsh does: xclip and wl-clipboard carry
+		# the identical sentence, and saying it twice reads as two separate
+		# instructions. Matched with the separators attached so one note
+		# cannot match inside another.
+		if [[ -n "$note" ]]; then
+			case "; ${notes};" in
+				*"; ${note};"*) ;;
+				*) notes="${notes}${notes:+; }${note}" ;;
+			esac
+		fi
 	done
 	# Formulae and casks cannot share one brew invocation.
 	local out=""
 	[[ -n "$formulae" ]] && out="brew install ${formulae}"
 	[[ -n "$casks"    ]] && out="${out}${out:+ && }brew install --cask ${casks}"
-	[[ -n "$notes"    ]] && out="${out}${out:+; }${notes}"
+	# Parenthesised rather than appended after "; ", matching the zsh original
+	# in lib/platform.zsh. This string is shown under "Install recommended
+	# packages" as a line to paste, and "; macOS uses pbcopy/pbpaste" is not a
+	# command.
+	if [[ -n "$notes" ]]; then
+		if [[ -n "$out" ]]; then out="${out} (${notes})"; else out="${notes}"; fi
+	fi
 	# Always succeed: an empty hint returned 1 here, and under the ERR trap
 	# that turned a package that needs no install into a scary [ERR] line.
 	printf '%s\n' "$out"
