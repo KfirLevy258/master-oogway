@@ -248,11 +248,41 @@ _ask()    { echo -en "${COLOR_MAGENTA}[ASK]${COLOR_RESET} $*" > /dev/tty; }
 _mo_has_tty() { { : < /dev/tty; } 2>/dev/null; }
 _mo_read_tty() { local r=""; read -r r < /dev/tty || r=""; printf '%s' "$r"; }
 
+# Every prompt site needs the same refusal, so it lives in one place.
+_die_no_git_identity()
+{
+	die "Cannot prompt for a git identity: no controlling terminal, or input closed." \
+		"Pre-configure it before running install:" \
+		"git config --global user.name 'Your Name' && git config --global user.email 'you@example.com'"
+}
+
+# Asked before anything is written. _install_gitconfig cannot prompt with no
+# controlling terminal, and it reached that discovery only after ~/.zshenv and
+# ~/.editorconfig were already symlinked — the install died having half
+# configured the shell, and only a re-run finished the job. Same condition,
+# same message, raised while the machine is still untouched.
+_preflight_git_identity()
+{
+	local n e
+	n=$(git config --file "${GITCONFIG}" user.name  2>/dev/null || true)
+	e=$(git config --file "${GITCONFIG}" user.email 2>/dev/null || true)
+	[[ -n "$n" && -n "$e" ]] && return 0
+	{ : < /dev/tty; } 2>/dev/null || _die_no_git_identity
+}
+
 # -- Error handling -------------------------------------------------------------
 
 _on_error()
 {
 	local exit_code=$?
+	# `set -E` makes subshells inherit this trap, and a command substitution
+	# is a subshell — so a deliberately guarded `out=$(cmd) || die "..."`
+	# fired here first and printed a confusing "command failed at line N"
+	# above the caller's real message (and "unknown (main)" under the
+	# curl-pipe bootstrap, where BASH_SOURCE is not a file). The guard in the
+	# caller is what handles a subshell failure; only the top-level shell
+	# reports. BASH_SUBSHELL predates the bash 3.2 macOS ships.
+	(( BASH_SUBSHELL == 0 )) || return "$exit_code"
 	local func="${FUNCNAME[1]:-main}"
 	local file="${BASH_SOURCE[1]:-unknown}"
 	trap - ERR
@@ -846,6 +876,12 @@ fi
 # -- Mode: dev (running from a master-oogway clone, not ~/.master-oogway) -------
 # Symlinks the local clone → ~/.master-oogway/ so edits are live immediately.
 
+# Checked here, not 200 lines down: discovering the missing dependency after
+# the fact left ~/.master-oogway pointing at the clone and the submodules
+# initialised, so an install that failed had still changed the machine. Pipe
+# mode has always checked before cloning; dev mode had not.
+[[ "$MO_UNINSTALL" == true ]] || _check_oh_my_zsh
+
 if _running_from_master_oogway_clone && ! _running_from_install_dir; then
 	_MO_DEV_DIR="$(_script_dir)"
 	if [[ -L "${INSTALL_DIR}" && "$(realpath "${INSTALL_DIR}" 2>/dev/null)" == "$(realpath "${_MO_DEV_DIR}" 2>/dev/null)" ]]; then
@@ -1022,6 +1058,7 @@ else
 fi
 
 _check_oh_my_zsh
+_preflight_git_identity
 
 # -- .zshrc: migrated once to $CONF_DIR/zshrc, symlinked, then never touched ----
 
@@ -1155,14 +1192,6 @@ _install_editorconfig
 # ~/.gitconfig.master-oogway  — bundle-managed settings (always updated)
 # ~/.gitconfig                — user-owned; created once, never overwritten
 #                               contains [user] + [include] pointing to both files
-
-# Both prompt sites below need the same refusal, so it lives in one place.
-_die_no_git_identity()
-{
-	die "Cannot prompt for a git identity: no controlling terminal, or input closed." \
-		"Pre-configure it before running install:" \
-		"git config --global user.name 'Your Name' && git config --global user.email 'you@example.com'"
-}
 
 _install_gitconfig()
 {
